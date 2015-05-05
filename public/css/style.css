@@ -1,0 +1,131 @@
+@charset "shift_jis";
+
+body,td,th {
+	font-size: 80%;
+	background: #f0f0f0;
+	font-family: Verdana,"MS PGothic","Osaka",Arial,sans-serif;
+}
+a {
+	text-decoration: none;
+}
+a:hover {
+	text-decoration: underline;
+}
+
+/* タイトル */
+h1 {
+	font-size: 200%;
+	margin-bottom: 0;
+	color: #666;
+}
+/* 投稿フォーム */
+table.regfm {
+	margin: 1em 0;
+}
+table.regfm td, table.regfm th {
+	font-size: 100%;
+	padding: 0.1em;
+	white-space: nowrap;
+	text-align: left;
+}
+img.capt {
+	vertical-align: middle;
+}
+p.url {
+	margin: 1em 0 0 0;
+}
+
+/* 記事 */
+div.art {
+	border-top: 1px solid #888;
+	padding: 6px;
+}
+div.art strong {
+	color: #007300;
+}
+div.com {
+	margin: 1em 0 1em 2em;
+}
+div.art-end {
+	border-top: 1px solid #888;
+}
+
+div.ta-c {
+	text-align: center;
+}
+div.obi {
+	text-align: center;
+	padding: 2px;
+	background: #444;
+	color: #fff;
+	font-weight: bold;
+}
+div.note {
+	width: 97%;
+	background: #fff;
+	border: 1px solid gray;
+	padding: 5px;
+	margin: 1em auto;
+	text-align: left;
+}
+p.close {
+	text-align: center;
+	margin-top: 3em;
+}
+p.close input {
+	width: 80px;
+}
+div.setback {
+	width: 90%;
+	margin: 0 auto;
+}
+
+/* エラー画面 */
+div#err-box {
+	text-align: center;
+	width: 500px;
+	margin: 3em auto;
+	border-top: 3px double #666;
+	border-bottom: 3px double #666;
+	padding: 1.2em;
+}
+div#err-box p {
+	color: #dd0000;
+}
+
+/*
+	ページ送り
+	参考: http://css-happylife.com/template/page_nav/
+*/
+ul.pager {
+	margin: 0 0 10px;
+	padding: 10px 10px 5px;
+}
+ul.pager li {
+	display: inline;
+	margin: 0 2px;
+	padding: 0;
+}
+ul.pager li span {
+	display: inline-block;
+	margin-bottom: 5px;
+	padding: 1px 8px;
+	background: #a7a7a7;
+	color: #fff;
+	border: 1px solid #aaa;
+	text-decoration: none;
+	vertical-align: middle;
+}
+ul.pager li a {
+	display: inline-block;
+	margin-bottom: 5px;
+	padding: 1px 8px;
+	background: #fff;
+	border: 1px solid #aaa;
+	text-decoration: none;
+	vertical-align: middle;
+}
+ul.pager li a:hover {
+	background: #eeeff7;
+	border-color: #00f;
+}

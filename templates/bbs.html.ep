@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="Shift_JIS"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja" lang="ja">
+<head>
+<meta http-equiv="content-type" content="text/html; charset=shift_jis" />
+<meta http-equiv="content-script-type" content="text/javascript" />
+<meta http-equiv="content-style-type" content="text/css" />
+<link href="style.css" rel="stylesheet" type="text/css" />
+<script type="text/javascript">
+<!--
+function popup(url) {
+	window.open(url, "note", "width=550,height=350,scrollbars=1");
+}
+// -->
+</script>
+<title>!bbs_title!</title>
+</head>
+<body>
+<div align="center">
+<h1>!bbs_title!</h1>
+<hr width="90%" />
+[<a href="!homepage!" target="_top">トップに戻る</a>]
+[<a href="!bbs_cgi!?mode=note" target="note" onclick="popup('!bbs_cgi!?mode=note')">留意事項</a>]
+[<a href="!bbs_cgi!?mode=find">ワード検索</a>]
+[<a href="!admin_cgi!">管理用</a>]
+<hr width="90%" />
+</div>
+<div class="setback">
+<form action="!bbs_cgi!" method="post">
+<input type="hidden" name="mode" value="regist" />
+<table class="regfm">
+<tr>
+	<th>おなまえ</th>
+	<td><input type="text" name="name" size="30" value="!name!" /></td>
+</tr><tr>
+	<th>Ｅメール</th>
+	<td><input type="text" name="email" size="30" value="!email!" /></td>
+</tr><tr>
+	<th>タイトル</th>
+	<td>
+    	<input type="text" name="sub" size="36" value="!sub!" />
+    	<input type="submit" value="送信する" /><input type="reset" value="リセット" />
+  </td>
+</tr><tr>
+	<th colspan="2">
+    	メッセージ<br />
+    	<textarea name="comment" cols="60" rows="7">!comment!</textarea>
+	</th>
+</tr><tr>
+	<th>参照先</th>
+	<td><input type="text" name="url" size="50" value="!url!" /></td>
+</tr><tr>
+	<th>削除キー</th>
+	<td class="small">
+    	<input type="password" name="pwd" size="8" maxlength="8" />
+		（英数字で8文字以内）&nbsp;
+		<input type="checkbox" name="cookie" value="1" checked="checked" /> クッキー情報保存
+	</td>
+<!-- captcha_begin -->
+</tr><tr>
+	<th>画像認証</th>
+	<td class="small">
+		<input type="text" name="captcha" size="8" style="ime-mode:inactive" maxlength="8" />
+		（右画像の数字を入力） <img src="!captcha_cgi!?!str_crypt!" class="capt" alt="投稿キー" />
+		<input type="hidden" name="str_crypt" value="!str_crypt!" />
+	</td>
+<!-- captcha_end -->
+</tr>
+</table>
+</form>
+</div>
+
+<!-- loop_begin -->
+<div class="art">
+	[<b>!num!</b>] <strong>!sub!</strong>
+	投稿者：<b>!name!</b> 投稿日：!date! &nbsp; [<a href="!bbs_cgi!?res=!num!">返信</a>]
+	<div class="com">!comment!</div>
+</div>
+<!-- loop_end -->
+
+<div class="art-end"></div>
+
+<!-- page_btn -->
+
+<div class="ta-c">
+<form action="!bbs_cgi!" method="post">
+<input type="hidden" name="mode" value="dele" />
+記事No<input type="text" name="num" size="3" />
+削除キー<input type="password" name="pwd" size="4" maxlength="8" />
+<input type="submit" value="削除" />
+</form>
+</div>
+</body>
+</html>

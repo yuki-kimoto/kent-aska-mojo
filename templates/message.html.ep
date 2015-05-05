@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="Shift_JIS"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja" lang="ja">
+<head>
+<meta http-equiv="content-type" content="text/html; charset=shift_jis" />
+<meta http-equiv="content-style-type" content="text/css" />
+<link href="style.css" rel="stylesheet" type="text/css" />
+<title>完了</title>
+</head>
+<body>
+<div class="ta-c">
+<hr width="350" />
+<p class="msg">!message!</p>
+<form action="!bbs_cgi!">
+<input type="submit" value="掲示板に戻る" />
+</form>
+<hr width="350" />
+</div>
+</body>
+</html>

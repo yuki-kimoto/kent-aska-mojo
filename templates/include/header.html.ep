@@ -1,0 +1,23 @@
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=shift_jis">
+<meta http-equiv="content-style-type" content="text/css">
+<style type="text/css">
+<!--
+body,td,th { font-size:80%; background:#f0f0f0; font-family:Verdana,"MS PGothic","Osaka",Arial,sans-serif; }
+p.ttl { font-weight:bold; color:#004080; border-bottom:1px solid #004080; padding:2px; }
+p.err { color:#dd0000; }
+p.msg { color:#006400; }
+table.form-tbl { border:1px solid #8080C0; border-collapse:collapse; margin:1em 0; }
+table.form-tbl th { border:1px solid #8080C0; background:#DCDCED; padding:5px; }
+table.form-tbl td { border:1px solid #8080C0; background:#fff; padding:5px; }
+div.ttl { border-bottom:1px solid #004080; padding:4px; color:#004080; font-weight:bold; margin:1em 0; }
+div.btn input { width:60px; }
+div.art { border-top:1px dotted gray; padding:5px; margin-top:10px; }
+div.art span, div.art strong { color:green; }
+div.com { margin-left:2em; color:#804000; font-size:90%; }
+-->
+</style>
+<title>$ttl</title>
+</head>
+<body>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="Shift_JIS"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja" lang="ja">
+<head>
+<meta http-equiv="content-type" content="text/html; charset=shift_jis" />
+<meta http-equiv="content-script-type" content="text/javascript" />
+<meta http-equiv="content-style-type" content="text/css" />
+<link href="style.css" rel="stylesheet" type="text/css" />
+<title>留意事項</title>
+</head>
+<body>
+
+<div class="obi">留意事項</div>
+
+<div class="ta-c">
+<div class="note">
+<p>- 投稿する上での注意事項 -</p>
+<ul>
+<li>投稿する上での必須入力項目は<b>「おなまえ」と「メッセージ」</b>です。その他の項目は任意となります。</li>
+<li>既存の記事に簡単に<b>「返信」</b>することができます。各記事にある<b>「返信」</b>のリンク部を押すと投稿フォームが返信用となります。</li>
+<li>投稿時に<b>「削除キー」</b>を入力しておくと、その削除キーを使って自分の記事を削除することができます。</li>
+<li>投稿する上で、<b>HTMLタグの使用はできません。</b></li>
+<li>管理者が著しく不適当と判断する記事や、他人を誹謗中傷する記事は予告なく削除することがあります。</li>
+</ul>
+</div>
+
+<p class="close">
+<input type="button" value="閉じる" onclick="javascript:window.close()" />
+</p>
+</div>
+</body>
+</html>
