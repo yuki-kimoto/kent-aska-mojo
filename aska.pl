@@ -621,7 +621,7 @@ get '/captcha' => sub {
 get '/check' => sub {
   my $self = shift;
 
-print <<EOM;
+  print <<EOM;
 Content-type: text/html; charset=shift_jis
 
 <html>
@@ -634,42 +634,40 @@ Content-type: text/html; charset=shift_jis
 <ul>
 EOM
 
-# ログファイル
-if (-f $config->{logfile}) {
-  print "<li>LOGパス : OK\n";
-  if (-r $config->{logfile} && -w $config->{logfile}) {
-    print "<li>LOGパーミッション : OK\n";
+  # ログファイル
+  if (-f $config->{logfile}) {
+    print "<li>LOGパス : OK\n";
+    if (-r $config->{logfile} && -w $config->{logfile}) {
+      print "<li>LOGパーミッション : OK\n";
+    } else {
+      print "<li>LOGパーミッション : NG\n";
+    }
   } else {
-    print "<li>LOGパーミッション : NG\n";
+    print "<li>LOGパス : NG\n";
   }
-} else {
-  print "<li>LOGパス : NG\n";
-}
 
-# テンプレート
-foreach (qw(bbs find note error message)) {
-  if (-f "$config->{tmpldir}/$_.html") {
-    print "<li>テンプレート( $_.html ) : OK\n";
+  # テンプレート
+  foreach (qw(bbs find note error message)) {
+    if (-f "$config->{tmpldir}/$_.html") {
+      print "<li>テンプレート( $_.html ) : OK\n";
+    } else {
+      print "<li>テンプレート( $_.html ) : NG\n";
+    }
+  }
+
+  # Image-Magick動作確認
+  eval { require Image::Magick; };
+  if ($@) {
+    print "<li>Image-Magick動作: NG\n";
   } else {
-    print "<li>テンプレート( $_.html ) : NG\n";
+    print "<li>Image-Magick動作: OK\n";
   }
-}
 
-# Image-Magick動作確認
-eval { require Image::Magick; };
-if ($@) {
-  print "<li>Image-Magick動作: NG\n";
-} else {
-  print "<li>Image-Magick動作: OK\n";
-}
-
-print <<EOM;
+  print <<EOM;
 </ul>
 </body>
 </html>
 EOM
-exit;
-
 
 };
 
