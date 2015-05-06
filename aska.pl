@@ -185,7 +185,7 @@ sub regist {
   if ($in{email} ne '' && $in{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
     $err .= "Ｅメールの入力内容が不正です<br />";
   }
-  if ($in{url} ne '' && $in{url} !~ /^https?:\/\/[\w-.!~*'();\/?:\@&=+\$,%#]+$/) {
+  if ($in{url} ne '' && $in{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
     $err .= "参照先URLの入力内容が不正です<br />";
   }
   if ($err) { error($err); }
@@ -451,6 +451,9 @@ sub error {
 #  メール送信
 
 sub mail_to {
+  # 仮
+  my %in;
+  
   my ($date,$host) = @_;
 
   # 件名をMIMEエンコード
@@ -534,7 +537,7 @@ EOM
 sub autolink {
   my $text = shift;
 
-  $text =~ s/(s?https?:\/\/([\w-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
+  $text =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
   return $text;
 }
 
@@ -764,7 +767,7 @@ sub get_cookie {
 };
 
 get '/admin' => sub {
-  my $self = shfit;
+  my $self = shift;
 
 # データ受理
 my %in = parse_form();
@@ -1076,7 +1079,7 @@ EOM
 
 #  エラー
 
-sub error {
+sub error_ {
   my $err = shift;
 
   header("ERROR!");
@@ -1099,7 +1102,7 @@ EOM
 
 #  完了メッセージ
 
-sub message {
+sub message_ {
   my $msg = shift;
   
   # 仮
@@ -1178,8 +1181,11 @@ sub load_pngren {
 
 #  復号
 
-sub decrypt {
+sub decrypt_ {
   my $caplen = shift;
+  
+  # 仮
+  my $buf;
 
   # 復号
   $buf =~ s/N/\n/g;
