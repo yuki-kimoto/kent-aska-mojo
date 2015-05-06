@@ -9,12 +9,13 @@ my $config = app->config;
 
 get '/' => sub {
   my $self = shift;
+  
+  $self->render(template => 'bbs');
 
   # パラメーター
   my $in = {};
   $in->{mode} = $self->param('mode');
-
-
+  
   if (lc $self->req->method eq 'post') {
     # 記事投稿
     if ($in->{mode} eq 'regist') {
@@ -886,7 +887,6 @@ sub message {
 
   print "Content-type: text/html; charset=shift_jis\n\n";
   print $tmpl;
-  exit;
 }
 
 #  ページ送り作成
@@ -942,7 +942,6 @@ sub load_pngren {
   # 表示開始
   require $config->{pngren_pl};
   &pngren::PngRen($sipng, \@img);
-  exit;
 }
 
 #  復号
@@ -978,5 +977,7 @@ sub err_img {
   foreach (@err) {
     print pack('C*', hex($_));
   }
-  exit;
 }
+
+sub error { }
+sub footer { }
