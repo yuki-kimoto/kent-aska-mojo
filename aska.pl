@@ -3,28 +3,12 @@
 use FindBin;
 use lib "$FindBin::Bin/extlib/perl5/lib";
 use Mojolicious::Lite;
+use Crypt::RC4;
 
 my $config = app->config;
 
 get '/' => sub {
   my $self = shift;
-
-#!/usr/local/bin/perl
-
-#┌─────────────────────────────────
-#│ ASKA BBS : aska.cgi - 2014/02/09
-#│ Copyright (c) KentWeb
-#│ http://www.kent-web.com/
-#└─────────────────────────────────
-
-# モジュール宣言
-use strict;
-use CGI::Carp qw(fatalsToBrowser);
-use lib "./lib";
-
-# 設定ファイル認識
-require "./init.cgi";
-my %cf = init();
 
 # データ受理
 my %in = parse_form();
@@ -36,16 +20,19 @@ if ($in{mode} eq 'find') { find_data(); }
 if ($in{mode} eq 'note') { note_page(); }
 bbs_list();
 
-#-----------------------------------------------------------
+
 #  記事表示
-#-----------------------------------------------------------
+
 sub bbs_list {
+  # 仮
+  my %in;
+    
   # レス処理
   $in{res} =~ s/\D//g;
   my %res;
   if ($in{res}) {
     my $flg;
-    open(IN,"$cf{logfile}") or error("open err: $cf{logfile}");
+    open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
     while (<IN>) {
       my ($no,$sub,$com) = (split(/<>/))[0,4,5];
       if ($in{res} == $no) {
@@ -71,11 +58,11 @@ sub bbs_list {
 
   # データオープン
   my ($i,@log);
-  open(IN,"$cf{logfile}") or error("open err: $cf{logfile}");
+  open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
   while (<IN>) {
     $i++;
     next if ($i < $pg + 1);
-    next if ($i > $pg + $cf{pg_max});
+    next if ($i > $pg + $config->{pg_max});
 
     push(@log,$_);
   }
@@ -89,20 +76,20 @@ sub bbs_list {
   $cook[2] ||= 'http://';
 
   # テンプレート読込
-  open(IN,"$cf{tmpldir}/bbs.html") or error("open err: bbs.html");
+  open(IN,"$config->{tmpldir}/bbs.html") or error("open err: bbs.html");
   my $tmpl = join('', <IN>);
   close(IN);
 
   # 文字置換
-  $tmpl =~ s/!([a-z]+_cgi)!/$cf{$1}/g;
-  $tmpl =~ s/!homepage!/$cf{homepage}/g;
+  $tmpl =~ s/!([a-z]+_cgi)!/$config->{$1}/g;
+  $tmpl =~ s/!homepage!/$config->{homepage}/g;
   $tmpl =~ s/<!-- page_btn -->/$page_btn/g;
   $tmpl =~ s/!name!/$cook[0]/;
   $tmpl =~ s/!email!/$cook[1]/;
   $tmpl =~ s/!url!/$cook[2]/;
   $tmpl =~ s/!sub!/$res{sub}/;
   $tmpl =~ s/!comment!/$res{com}/;
-  $tmpl =~ s/!bbs_title!/$cf{bbs_title}/g;
+  $tmpl =~ s/!bbs_title!/$config->{bbs_title}/g;
 
   # テンプレート分割
   my ($head,$loop,$foot) = $tmpl =~ /(.+)<!-- loop_begin -->(.+)<!-- loop_end -->(.+)/s
@@ -110,9 +97,9 @@ sub bbs_list {
 
   # 画像認証作成
   my ($str_plain,$str_crypt);
-  if ($cf{use_captcha} > 0) {
-    require $cf{captcha_pl};
-    ($str_plain,$str_crypt) = cap::make($cf{captcha_key},$cf{cap_len});
+  if ($config->{use_captcha} > 0) {
+    require $config->{captcha_pl};
+    ($str_plain,$str_crypt) = cap::make($config->{captcha_key},$config->{cap_len});
     $head =~ s/!str_crypt!/$str_crypt/g;
   } else {
     $head =~ s/<!-- captcha_begin -->.+<!-- captcha_end -->//s;
@@ -126,8 +113,8 @@ sub bbs_list {
   foreach (@log) {
     my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
     $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
-    $com = autolink($com) if ($cf{autolink});
-    $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$cf{ref_col}">$2<\/span>/g if ($cf{ref_col});
+    $com = autolink($com) if ($config->{autolink});
+    $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
     $com .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
 
     my $tmp = $loop;
@@ -136,7 +123,7 @@ sub bbs_list {
     $tmp =~ s/!name!/$name/g;
     $tmp =~ s/!date!/$date/g;
     $tmp =~ s/!comment!/$com/g;
-    $tmp =~ s/!bbs_cgi!/$cf{bbs_cgi}/g;
+    $tmp =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
     print $tmp;
   }
 
@@ -144,12 +131,15 @@ sub bbs_list {
   footer($foot);
 }
 
-#-----------------------------------------------------------
+
 #  記事書込
-#-----------------------------------------------------------
+
 sub regist {
+  # 仮
+  my %in;
+  
   # 投稿チェック
-  if ($cf{postonly} && $ENV{REQUEST_METHOD} ne 'POST') {
+  if ($config->{postonly} && $ENV{REQUEST_METHOD} ne 'POST') {
     error("不正なリクエストです");
   }
 
@@ -161,14 +151,14 @@ sub regist {
   $in{comment} =~ s|(<br />)+$||g;
 
   # チェック
-  if ($cf{no_wd}) { no_wd(); }
-  if ($cf{jp_wd}) { jp_wd(); }
-  if ($cf{urlnum} > 0) { urlnum(); }
+  if ($config->{no_wd}) { no_wd(); }
+  if ($config->{jp_wd}) { jp_wd(); }
+  if ($config->{urlnum} > 0) { urlnum(); }
 
   # 画像認証チェック
-  if ($cf{use_captcha} > 0) {
-    require $cf{captcha_pl};
-    if ($in{captcha} !~ /^\d{$cf{cap_len}}$/) {
+  if ($config->{use_captcha} > 0) {
+    require $config->{captcha_pl};
+    if ($in{captcha} !~ /^\d{$config->{cap_len}}$/) {
       error("画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください");
     }
 
@@ -176,7 +166,7 @@ sub regist {
     # -1 : キー不一致
     #  0 : 制限時間オーバー
     #  1 : キー一致
-    my $chk = cap::check($in{captcha},$in{str_crypt},$cf{captcha_key},$cf{cap_time},$cf{cap_len});
+    my $chk = cap::check($in{captcha},$in{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
     if ($chk == 0) {
       error("画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください");
     } elsif ($chk == -1) {
@@ -201,7 +191,7 @@ sub regist {
   if ($err) { error($err); }
 
   # コード変換
-  if ($cf{chg_code} == 1) {
+  if ($config->{chg_code} == 1) {
     require Jcode;
     $in{name} = Jcode->new($in{name})->sjis;
     $in{sub}  = Jcode->new($in{sub})->sjis;
@@ -222,7 +212,7 @@ sub regist {
         $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
 
   # 先頭記事読み取り
-  open(DAT,"+< $cf{logfile}") or error("open err: $cf{logfile}");
+  open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
   eval "flock(DAT, 2);";
   my $top = <DAT>;
 
@@ -235,10 +225,10 @@ sub regist {
 
   # 連続投稿チェック
   my $flg;
-  if ($cf{regCtl} == 1) {
-    if ($host eq $hos && $time - $tim < $cf{wait}) { $flg = 1; }
-  } elsif ($cf{regCtl} == 2) {
-    if ($time - $tim < $cf{wait}) { $flg = 1; }
+  if ($config->{regCtl} == 1) {
+    if ($host eq $hos && $time - $tim < $config->{wait}) { $flg = 1; }
+  } elsif ($config->{regCtl} == 2) {
+    if ($time - $tim < $config->{wait}) { $flg = 1; }
   }
   if ($flg) {
     close(DAT);
@@ -255,7 +245,7 @@ sub regist {
     $i++;
     push(@data,$_);
 
-    last if ($i >= $cf{maxlog}-1);
+    last if ($i >= $config->{maxlog}-1);
   }
 
   # 更新
@@ -269,16 +259,19 @@ sub regist {
   set_cookie($in{name},$in{email},$in{url}) if ($in{cookie} == 1);
 
   # メール通知
-  mail_to($date,$host) if ($cf{mailing} == 1);
+  mail_to($date,$host) if ($config->{mailing} == 1);
 
   # 完了画面
   message("ありがとうございます。記事を受理しました。");
 }
 
-#-----------------------------------------------------------
+
 #  ワード検索
-#-----------------------------------------------------------
+
 sub find_data {
+  # 仮
+  my %in;
+  
   # 条件
   $in{cond} =~ s/\D//g;
   $in{word} =~ s|<br />||g;
@@ -295,16 +288,16 @@ sub find_data {
   }
 
   # 検索実行
-  $in{word} = Jcode->new($in{word})->sjis if ($cf{chg_code} == 1);
+  $in{word} = Jcode->new($in{word})->sjis if ($config->{chg_code} == 1);
   my @log = search($in{word},$in{cond}) if ($in{word} ne '');
 
   # テンプレート読み込み
-  open(IN,"$cf{tmpldir}/find.html") or error("open err: find.html");
+  open(IN,"$config->{tmpldir}/find.html") or error("open err: find.html");
   my $tmpl = join('', <IN>);
   close(IN);
 
   # 文字置換
-  $tmpl =~ s/!bbs_cgi!/$cf{bbs_cgi}/g;
+  $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
   $tmpl =~ s/<!-- op_cond -->/$op_cond/;
   $tmpl =~ s/!word!/$in{word}/;
 
@@ -320,8 +313,8 @@ sub find_data {
   foreach (@log) {
     my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
     $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
-    $com  = autolink($com) if ($cf{autolink});
-    $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$cf{ref_col}">$2<\/span>/g if ($cf{ref_col});
+    $com  = autolink($com) if ($config->{autolink});
+    $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
     $url  = qq|<a href="$url" target="_blank">$url</a>| if ($url);
 
     my $tmp = $loop;
@@ -337,9 +330,9 @@ sub find_data {
   footer($foot);
 }
 
-#-----------------------------------------------------------
+
 #  検索実行
-#-----------------------------------------------------------
+
 sub search {
   my ($word,$cond) = @_;
 
@@ -354,7 +347,7 @@ sub search {
 
   # 検索処理
   my @log;
-  open(IN,"$cf{logfile}") or error("open err: $cf{logfile}");
+  open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
   while (<IN>) {
     my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
 
@@ -377,11 +370,11 @@ sub search {
   return @log;
 }
 
-#-----------------------------------------------------------
+
 #  留意事項表示
-#-----------------------------------------------------------
+
 sub note_page {
-  open(IN,"$cf{tmpldir}/note.html") or error("open err: note.html");
+  open(IN,"$config->{tmpldir}/note.html") or error("open err: note.html");
   my $tmpl = join('', <IN>);
   close(IN);
 
@@ -390,17 +383,20 @@ sub note_page {
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  ユーザ記事削除
-#-----------------------------------------------------------
+
 sub dele_data {
+  # 仮
+  my %in;
+  
   # 入力チェック
   if ($in{num} eq '' or $in{pwd} eq '') {
     error("削除Noまたは削除キーが入力モレです");
   }
 
   my ($flg,$crypt,@log);
-  open(DAT,"+< $cf{logfile}") or error("open err: $cf{logfile}");
+  open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
   eval "flock(DAT, 2);";
   while (<DAT>) {
     my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
@@ -434,13 +430,13 @@ sub dele_data {
   message("記事を削除しました");
 }
 
-#-----------------------------------------------------------
+
 #  エラー画面
-#-----------------------------------------------------------
+
 sub error {
   my $err = shift;
 
-  open(IN,"$cf{tmpldir}/error.html") or die;
+  open(IN,"$config->{tmpldir}/error.html") or die;
   my $tmpl = join('', <IN>);
   close(IN);
 
@@ -451,14 +447,14 @@ sub error {
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  メール送信
-#-----------------------------------------------------------
+
 sub mail_to {
   my ($date,$host) = @_;
 
   # 件名をMIMEエンコード
-  if ($cf{chg_code} == 0) { require Jcode; }
+  if ($config->{chg_code} == 0) { require Jcode; }
   my $msub = Jcode->new("BBS : $in{sub}",'sjis')->mime_encode;
 
   # コメント内の改行復元
@@ -489,30 +485,30 @@ EOM
   $mbody = Jcode->new($mbody,'sjis')->jis;
 
   # メールアドレスがない場合は管理者メールに置き換え
-  $in{email} ||= $cf{mailto};
+  $in{email} ||= $config->{mailto};
 
   # sendmailコマンド
-  my $scmd = "$cf{sendmail} -t -i";
-  if ($cf{sendm_f}) {
+  my $scmd = "$config->{sendmail} -t -i";
+  if ($config->{sendm_f}) {
     $scmd .= " -f $in{email}";
   }
 
   # 送信
   open(MAIL,"| $scmd") or error("送信失敗");
-  print MAIL "To: $cf{mailto}\n";
+  print MAIL "To: $config->{mailto}\n";
   print MAIL "From: $in{email}\n";
   print MAIL "Subject: $msub\n";
   print MAIL "MIME-Version: 1.0\n";
   print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
   print MAIL "Content-Transfer-Encoding: 7bit\n";
-  print MAIL "X-Mailer: $cf{version}\n\n";
+  print MAIL "X-Mailer: $config->{version}\n\n";
   print MAIL "$mbody\n";
   close(MAIL);
 }
 
-#-----------------------------------------------------------
+
 #  フッター
-#-----------------------------------------------------------
+
 sub footer {
   my $foot = shift;
 
@@ -532,9 +528,9 @@ EOM
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  自動リンク
-#-----------------------------------------------------------
+
 sub autolink {
   my $text = shift;
 
@@ -542,12 +538,15 @@ sub autolink {
   return $text;
 }
 
-#-----------------------------------------------------------
+
 #  禁止ワードチェック
-#-----------------------------------------------------------
+
 sub no_wd {
+  # 仮
+  my %in;
+  
   my $flg;
-  foreach ( split(/,/,$cf{no_wd}) ) {
+  foreach ( split(/,/,$config->{no_wd}) ) {
     if (index("$in{name} $in{sub} $in{comment}", $_) >= 0) {
       $flg = 1;
       last;
@@ -556,40 +555,46 @@ sub no_wd {
   if ($flg) { error("禁止ワードが含まれています"); }
 }
 
-#-----------------------------------------------------------
+
 #  日本語チェック
-#-----------------------------------------------------------
+
 sub jp_wd {
+  # 仮
+  my %in;
+  
   if ($in{comment} !~ /[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]/) {
     error("メッセージに日本語が含まれていません");
   }
 }
 
-#-----------------------------------------------------------
+
 #  URL個数チェック
-#-----------------------------------------------------------
+
 sub urlnum {
+  # 仮
+  my %in;
+  
   my $com = $in{comment};
   my ($num) = ($com =~ s|(https?://)|$1|ig);
-  if ($num > $cf{urlnum}) {
-    error("コメント中のURLアドレスは最大$cf{urlnum}個までです");
+  if ($num > $config->{urlnum}) {
+    error("コメント中のURLアドレスは最大$config->{urlnum}個までです");
   }
 }
 
-#-----------------------------------------------------------
+
 #  アクセス制限
-#-----------------------------------------------------------
+
 sub get_host {
   # IP&ホスト取得
   my $host = $ENV{REMOTE_HOST};
   my $addr = $ENV{REMOTE_ADDR};
-  if ($cf{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
+  if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
     $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
   }
 
   # IPチェック
   my $flg;
-  foreach ( split(/\s+/,$cf{deny_addr}) ) {
+  foreach ( split(/\s+/,$config->{deny_addr}) ) {
     s/\./\\\./g;
     s/\*/\.\*/g;
 
@@ -601,7 +606,7 @@ sub get_host {
   # ホストチェック
   } elsif ($host) {
 
-    foreach ( split(/\s+/,$cf{deny_host}) ) {
+    foreach ( split(/\s+/,$config->{deny_host}) ) {
       s/\./\\\./g;
       s/\*/\.\*/g;
 
@@ -616,9 +621,9 @@ sub get_host {
   return ($host,$addr);
 }
 
-#-----------------------------------------------------------
+
 #  crypt暗号
-#-----------------------------------------------------------
+
 sub encrypt {
   my $in = shift;
 
@@ -628,9 +633,9 @@ sub encrypt {
   crypt($in,$salt) || crypt ($in,'$1$'.$salt);
 }
 
-#-----------------------------------------------------------
+
 #  crypt照合
-#-----------------------------------------------------------
+
 sub decrypt {
   my ($in,$dec) = @_;
 
@@ -642,17 +647,17 @@ sub decrypt {
   }
 }
 
-#-----------------------------------------------------------
+
 #  完了メッセージ
-#-----------------------------------------------------------
+
 sub message {
   my $msg = shift;
 
-  open(IN,"$cf{tmpldir}/message.html") or error("open err: message.html");
+  open(IN,"$config->{tmpldir}/message.html") or error("open err: message.html");
   my $tmpl = join('', <IN>);
   close(IN);
 
-  $tmpl =~ s/!bbs_cgi!/$cf{bbs_cgi}/g;
+  $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
   $tmpl =~ s/!message!/$msg/g;
 
   print "Content-type: text/html; charset=shift_jis\n\n";
@@ -660,16 +665,16 @@ sub message {
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  ページ送り作成
-#-----------------------------------------------------------
+
 sub make_pager {
   my ($i,$pg) = @_;
 
   # ページ繰越数定義
-  $cf{pg_max} ||= 10;
-  my $next = $pg + $cf{pg_max};
-  my $back = $pg - $cf{pg_max};
+  $config->{pg_max} ||= 10;
+  my $next = $pg + $config->{pg_max};
+  my $back = $pg - $config->{pg_max};
 
   # ページ繰越ボタン作成
   my @pg;
@@ -681,11 +686,11 @@ sub make_pager {
         $flg++;
         push(@pg,qq!<li><span>$x</span></li>\n!);
       } else {
-        push(@pg,qq!<li><a href="$cf{bbs_cgi}?pg=$y">$x</a></li>\n!);
+        push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
       }
       $x++;
-      $y += $cf{pg_max};
-      $z -= $cf{pg_max};
+      $y += $config->{pg_max};
+      $z -= $config->{pg_max};
 
       if ($flg) { $w++; }
       last if ($w >= 5 && @pg >= 10);
@@ -694,19 +699,19 @@ sub make_pager {
   while( @pg >= 11 ) { shift(@pg); }
   my $ret = join('', @pg);
   if ($back >= 0) {
-    $ret = qq!<li><a href="$cf{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
+    $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
   }
   if ($next < $i) {
-    $ret .= qq!<li><a href="$cf{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
+    $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
   }
   
   # 結果を返す
   return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
 }
 
-#-----------------------------------------------------------
+
 #  クッキー発行
-#-----------------------------------------------------------
+
 sub set_cookie {
   my @data = @_;
 
@@ -726,12 +731,12 @@ sub set_cookie {
     $cook .= "$_<>";
   }
 
-  print "Set-Cookie: $cf{cookie_id}=$cook; expires=$gmt\n";
+  print "Set-Cookie: $config->{cookie_id}=$cook; expires=$gmt\n";
 }
 
-#-----------------------------------------------------------
+
 #  クッキー取得
-#-----------------------------------------------------------
+
 sub get_cookie {
   # クッキー取得
   my $cook = $ENV{HTTP_COOKIE};
@@ -746,7 +751,7 @@ sub get_cookie {
 
   # URLデコード
   my @cook;
-  foreach ( split(/<>/,$cook{$cf{cookie_id}}) ) {
+  foreach ( split(/<>/,$cook{$config->{cookie_id}}) ) {
     s/%([0-9A-Fa-f][0-9A-Fa-f])/pack("H2", $1)/eg;
     s/[&"'<>]//g;
 
@@ -761,23 +766,6 @@ sub get_cookie {
 get '/admin' => sub {
   my $self = shfit;
 
-#!/usr/local/bin/perl
-
-#┌─────────────────────────────────
-#│ ASKA BBS : admin.cgi - 2014/02/09
-#│ copyright (c) KentWeb
-#│ http://www.kent-web.com/
-#└─────────────────────────────────
-
-# モジュール宣言
-use strict;
-use CGI::Carp qw(fatalsToBrowser);
-use lib "./lib";
-
-# 設定ファイル認識
-require "./init.cgi";
-my %cf = init();
-
 # データ受理
 my %in = parse_form();
 
@@ -787,10 +775,13 @@ check_passwd();
 # 管理モード
 admin_mode();
 
-#-----------------------------------------------------------
+
 #  管理モード
-#-----------------------------------------------------------
+
 sub admin_mode {
+  # 仮
+  my %in;
+  
   # 削除処理
   if ($in{job_dele} && $in{no}) {
 
@@ -802,7 +793,7 @@ sub admin_mode {
 
     # 削除情報をマッチング
     my @data;
-    open(DAT,"+< $cf{logfile}") or error("open err: $cf{logfile}");
+    open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
     eval "flock(DAT, 2);";
     while (<DAT>) {
       my ($no) = (split(/<>/))[0];
@@ -822,7 +813,7 @@ sub admin_mode {
   } elsif ($in{job_edit} && $in{no}) {
 
     my $log;
-    open(IN,"$cf{logfile}") or error("open err: $cf{logfile}");
+    open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
     while (<IN>) {
       my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
 
@@ -844,7 +835,7 @@ sub admin_mode {
     $in{sub} ||= "無題";
 
     # コード変換
-    if ($cf{chg_code} == 1) {
+    if ($config->{chg_code} == 1) {
       require Jcode;
       $in{name} = Jcode->new($in{name})->sjis;
       $in{sub}  = Jcode->new($in{sub})->sjis;
@@ -853,7 +844,7 @@ sub admin_mode {
 
     # 読み出し
     my @data;
-    open(DAT,"+< $cf{logfile}") or error("open err: $cf{logfile}");
+    open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
     eval "flock(DAT, 2);";
     while (<DAT>) {
       my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pwd,$tim) = split(/<>/);
@@ -890,12 +881,12 @@ sub admin_mode {
   header("管理モード");
   print <<EOM;
 <div align="right">
-<form action="$cf{bbs_cgi}">
+<form action="$config->{bbs_cgi}">
 <input type="submit" value="&lt; 掲示板">
 </form>
 </div>
 <div class="ttl">■ 管理モード</div>
-<form action="$cf{admin_cgi}" method="post">
+<form action="$config->{admin_cgi}" method="post">
 <input type="hidden" name="mode" value="admin">
 <input type="hidden" name="pass" value="$in{pass}">
 <div class="btn">
@@ -906,7 +897,7 @@ EOM
 
   # 記事を展開
   my $i = 0;
-  open(IN,"$cf{logfile}") or error("open err: $cf{logfile}");
+  open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
   while (<IN>) {
     $i++;
     next if ($i < $page + 1);
@@ -941,10 +932,13 @@ EOM
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  修正フォーム
-#-----------------------------------------------------------
+
 sub edit_form {
+  # 仮
+  my %in;
+  
   my $log = shift;
   my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/,$log);
 
@@ -954,7 +948,7 @@ sub edit_form {
   header("管理モード ＞ 修正フォーム");
   print <<EOM;
 <div align="right">
-<form action="$cf{admin_cgi}" method="post">
+<form action="$config->{admin_cgi}" method="post">
 <input type="hidden" name="mode" value="admin">
 <input type="hidden" name="pass" value="$in{pass}">
 <input type="submit" value="&lt; 前画面">
@@ -964,7 +958,7 @@ sub edit_form {
 <ul>
 <li>変更する部分のみ修正して送信ボタンを押してください。
 </ul>
-<form action="$cf{admin_cgi}" method="post">
+<form action="$config->{admin_cgi}" method="post">
 <input type="hidden" name="mode" value="admin">
 <input type="hidden" name="job" value="edit">
 <input type="hidden" name="no" value="$no">
@@ -996,9 +990,9 @@ EOM
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  HTMLヘッダー
-#-----------------------------------------------------------
+
 sub header {
   my $ttl = shift;
 
@@ -1031,28 +1025,31 @@ div.com { margin-left:2em; color:#804000; font-size:90%; }
 EOM
 }
 
-#-----------------------------------------------------------
+
 #  パスワード認証
-#-----------------------------------------------------------
+
 sub check_passwd {
+  # 仮
+  my %in;
+  
   # パスワードが未入力の場合は入力フォーム画面
   if ($in{pass} eq "") {
     enter_form();
 
   # パスワード認証
-  } elsif ($in{pass} ne $cf{password}) {
+  } elsif ($in{pass} ne $config->{password}) {
     error("認証できません");
   }
 }
 
-#-----------------------------------------------------------
+
 #  入室画面
-#-----------------------------------------------------------
+
 sub enter_form {
   header("入室画面");
   print <<EOM;
 <div align="center">
-<form action="$cf{admin_cgi}" method="post">
+<form action="$config->{admin_cgi}" method="post">
 <table width="410" style="margin-top:50px">
 <tr>
   <td height="50" align="center">
@@ -1076,9 +1073,9 @@ EOM
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  エラー
-#-----------------------------------------------------------
+
 sub error {
   my $err = shift;
 
@@ -1099,11 +1096,14 @@ EOM
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  完了メッセージ
-#-----------------------------------------------------------
+
 sub message {
   my $msg = shift;
+  
+  # 仮
+  my %in;
 
   header("完了");
   print <<EOM;
@@ -1111,7 +1111,7 @@ sub message {
 <hr width="350">
 <p class="msg">$msg</p>
 <hr width="350">
-<form action="$cf{admin_cgi}" method="post">
+<form action="$config->{admin_cgi}" method="post">
 <input type="hidden" name="pass" value="$in{pass}">
 <input type="submit" value="管理画面に戻る">
 </form>
@@ -1122,9 +1122,9 @@ EOM
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  文字数カット for Shift-JIS
-#-----------------------------------------------------------
+
 sub cut_str {
   my $str = shift;
   $str =~ s|<br( /)?>||g;
@@ -1144,43 +1144,25 @@ sub cut_str {
 get '/captcha' => sub {
   my $self = shift;
 
-#!/usr/local/bin/perl
-
-#┌─────────────────────────────
-#│ 画像認証作成ファイル v3.1
-#│ captcha.cgi - 2012/03/13
-#│ Copyright (c) KentWeb
-#│ http://www.kent-web.com/
-#└─────────────────────────────
-
-# モジュール宣言
-use strict;
-use lib "./lib";
-use Crypt::RC4;
-
-# 外部ファイル取り込み
-require './init.cgi';
-my %cf = &init;
-
 # パラメータ受け取り
 my $buf = $ENV{QUERY_STRING};
 $buf =~ s/[<>&"'\s]//g;
 &error if (!$buf);
 
 # 復号
-my $plain = &decrypt($cf{cap_len});
+my $plain = &decrypt($config->{cap_len});
 
 # 認証画像作成
-if ($cf{use_captcha} == 2) {
-  require $cf{captsec_pl};
-  &load_capsec($plain, "$cf{bin_dir}/$cf{font_ttl}");
+if ($config->{use_captcha} == 2) {
+  require $config->{captsec_pl};
+  &load_capsec($plain, "$config->{bin_dir}/$config->{font_ttl}");
 } else {
-  &load_pngren($plain, "$cf{bin_dir}/$cf{si_png}");
+  &load_pngren($plain, "$config->{bin_dir}/$config->{si_png}");
 }
 
-#-----------------------------------------------------------
+
 #  認証画像作成 [ライブラリ版]
-#-----------------------------------------------------------
+
 sub load_pngren {
   my ($plain, $sipng) = @_;
 
@@ -1188,30 +1170,30 @@ sub load_pngren {
   my @img = split(//, $plain);
 
   # 表示開始
-  require $cf{pngren_pl};
+  require $config->{pngren_pl};
   &pngren::PngRen($sipng, \@img);
   exit;
 }
 
-#-----------------------------------------------------------
+
 #  復号
-#-----------------------------------------------------------
+
 sub decrypt {
   my $caplen = shift;
 
   # 復号
   $buf =~ s/N/\n/g;
   $buf =~ s/([0-9A-Fa-f]{2})/pack('H2', $1)/eg;
-  my $plain = RC4( $cf{captcha_key}, $buf );
+  my $plain = RC4( $config->{captcha_key}, $buf );
 
   # 先頭の数字を抽出
   $plain =~ s/^(\d{$caplen}).*/$1/ or &err_img;
   return $plain;
 }
 
-#-----------------------------------------------------------
+
 #  エラー処理
-#-----------------------------------------------------------
+
 sub err_img {
   # エラー画像
   my @err = qw{
@@ -1236,22 +1218,6 @@ sub err_img {
 get '/check' => sub {
   my $self = shift;
 
-#!/usr/local/bin/perl
-
-#┌─────────────────────────────────
-#│ ASKA-BBS : check.cgi - 2014/01/05
-#│ Copyright (c) KentWeb
-#│ http://www.kent-web.com/
-#└─────────────────────────────────
-
-# モジュール宣言
-use strict;
-use CGI::Carp qw(fatalsToBrowser);
-
-# 外部ファイル取り込み
-require './init.cgi';
-my %cf = init();
-
 print <<EOM;
 Content-type: text/html; charset=shift_jis
 
@@ -1261,14 +1227,14 @@ Content-type: text/html; charset=shift_jis
 <title>Check Mode</title>
 </head>
 <body>
-<b>Check Mode: [ $cf{version} ]</b>
+<b>Check Mode: [ $config->{version} ]</b>
 <ul>
 EOM
 
 # ログファイル
-if (-f $cf{logfile}) {
+if (-f $config->{logfile}) {
   print "<li>LOGパス : OK\n";
-  if (-r $cf{logfile} && -w $cf{logfile}) {
+  if (-r $config->{logfile} && -w $config->{logfile}) {
     print "<li>LOGパーミッション : OK\n";
   } else {
     print "<li>LOGパーミッション : NG\n";
@@ -1279,7 +1245,7 @@ if (-f $cf{logfile}) {
 
 # テンプレート
 foreach (qw(bbs find note error message)) {
-  if (-f "$cf{tmpldir}/$_.html") {
+  if (-f "$config->{tmpldir}/$_.html") {
     print "<li>テンプレート( $_.html ) : OK\n";
   } else {
     print "<li>テンプレート( $_.html ) : NG\n";
