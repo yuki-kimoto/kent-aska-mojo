@@ -10,23 +10,253 @@ my $config = app->config;
 get '/' => sub {
   my $self = shift;
 
-# データ受理
-my $in = $self->req->params->to_hash;
+  # データ受理
+  my $in = $self->req->params->to_hash;
 
-# 処理分岐
-if ($in->{mode} eq 'regist') { regist(); }
-if ($in->{mode} eq 'dele') { dele_data(); }
-if ($in->{mode} eq 'find') { find_data(); }
-if ($in->{mode} eq 'note') { note_page(); }
-bbs_list();
+  # 記事投稿
+  if ($in->{mode} eq 'regist') {
+  
+    # 投稿チェック
+    if ($config->{postonly} && $ENV{REQUEST_METHOD} ne 'POST') {
+      error("不正なリクエストです");
+    }
 
+    # 不要改行カット
+    $in->{sub}  =~ s|<br />||g;
+    $in->{name} =~ s|<br />||g;
+    $in->{pwd}  =~ s|<br />||g;
+    $in->{captcha} =~ s|<br />||g;
+    $in->{comment} =~ s|(<br />)+$||g;
 
-#  記事表示
+    # チェック
+    if ($config->{no_wd}) { no_wd(); }
+    if ($config->{jp_wd}) { jp_wd(); }
+    if ($config->{urlnum} > 0) { urlnum(); }
 
-sub bbs_list {
-  # 仮
-  my $in;
-    
+    # 画像認証チェック
+    if ($config->{use_captcha} > 0) {
+      require $config->{captcha_pl};
+      if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
+        error("画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください");
+      }
+
+      # 投稿キーチェック
+      # -1 : キー不一致
+      #  0 : 制限時間オーバー
+      #  1 : キー一致
+      my $chk = cap::check($in->{captcha},$in->{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
+      if ($chk == 0) {
+        error("画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください");
+      } elsif ($chk == -1) {
+        error("画像認証が不正です。<br />投稿フォームに戻って再読込み後再入力してください");
+      }
+    }
+
+    # 未入力の場合
+    if ($in->{url} eq "http://") { $in->{url} = ""; }
+    $in->{sub} ||= '無題';
+
+    # フォーム内容をチェック
+    my $err;
+    if ($in->{name} eq "") { $err .= "名前が入力されていません<br />"; }
+    if ($in->{comment} eq "") { $err .= "コメントが入力されていません<br />"; }
+    if ($in->{email} ne '' && $in->{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
+      $err .= "Ｅメールの入力内容が不正です<br />";
+    }
+    if ($in->{url} ne '' && $in->{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
+      $err .= "参照先URLの入力内容が不正です<br />";
+    }
+    if ($err) { error($err); }
+
+    # コード変換
+    if ($config->{chg_code} == 1) {
+      require Jcode;
+      $in->{name} = Jcode->new($in->{name})->sjis;
+      $in->{sub}  = Jcode->new($in->{sub})->sjis;
+      $in->{comment} = Jcode->new($in->{comment})->sjis;
+    }
+
+    # ホスト取得
+    my ($host,$addr) = get_host();
+
+    # 削除キー暗号化
+    my $pwd = encrypt($in->{pwd}) if ($in->{pwd} ne "");
+
+    # 時間取得
+    my $time = time;
+    my ($min,$hour,$mday,$mon,$year,$wday) = (localtime($time))[1..6];
+    my @wk = ('Sun','Mon','Tue','Wed','Thu','Fri','Sat');
+    my $date = sprintf("%04d/%02d/%02d(%s) %02d:%02d",
+          $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
+
+    # 先頭記事読み取り
+    open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
+    eval "flock(DAT, 2);";
+    my $top = <DAT>;
+
+    # 重複投稿チェック
+    my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/,$top);
+    if ($in->{name} eq $nam && $in->{comment} eq $com) {
+      close(DAT);
+      error("二重投稿は禁止です");
+    }
+
+    # 連続投稿チェック
+    my $flg;
+    if ($config->{regCtl} == 1) {
+      if ($host eq $hos && $time - $tim < $config->{wait}) { $flg = 1; }
+    } elsif ($config->{regCtl} == 2) {
+      if ($time - $tim < $config->{wait}) { $flg = 1; }
+    }
+    if ($flg) {
+      close(DAT);
+      error("現在投稿制限中です。もうしばらくたってから投稿をお願いします");
+    }
+
+    # 記事No採番
+    $no++;
+
+    # 記事数調整
+    my @data = ($top);
+    my $i = 0;
+    while (<DAT>) {
+      $i++;
+      push(@data,$_);
+
+      last if ($i >= $config->{maxlog}-1);
+    }
+
+    # 更新
+    seek(DAT, 0, 0);
+    print DAT "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
+    print DAT @data;
+    truncate(DAT, tell(DAT));
+    close(DAT);
+
+    # クッキー格納
+    set_cookie($in->{name},$in->{email},$in->{url}) if ($in->{cookie} == 1);
+
+    # メール通知
+    mail_to($date,$host) if ($config->{mailing} == 1);
+
+    # 完了画面
+    message("ありがとうございます。記事を受理しました。");
+  }
+  
+  # ユーザー記事削除
+  if ($in->{mode} eq 'dele') {
+    # 入力チェック
+    if ($in->{num} eq '' or $in->{pwd} eq '') {
+      error("削除Noまたは削除キーが入力モレです");
+    }
+
+    my ($flg,$crypt,@log);
+    open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
+    eval "flock(DAT, 2);";
+    while (<DAT>) {
+      my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
+
+      if ($in->{num} == $no) {
+        $flg++;
+        $crypt = $pw;
+        next;
+      }
+      push(@log,$_);
+    }
+
+    if (!$flg or !$crypt) {
+      close(DAT);
+      error("削除キーが設定されていないか又は記事が見当たりません");
+    }
+
+    # 削除キーを照合
+    if (decrypt($in->{pwd},$crypt) != 1) {
+      close(DAT);
+      error("認証できません");
+    }
+
+    # ログ更新
+    seek(DAT, 0, 0);
+    print DAT @log;
+    truncate(DAT, tell(DAT));
+    close(DAT);
+
+    # 完了
+    message("記事を削除しました");
+  }
+  
+  # ワード検索
+  if ($in->{mode} eq 'find') {
+    # 条件
+    $in->{cond} =~ s/\D//g;
+    $in->{word} =~ s|<br />||g;
+
+    # 検索条件プルダウン
+    my %op = (1 => 'AND', 0 => 'OR');
+    my $op_cond;
+    foreach (1,0) {
+      if ($in->{cond} eq $_) {
+        $op_cond .= qq|<option value="$_" selected="selected">$op{$_}</option>\n|;
+      } else {
+        $op_cond .= qq|<option value="$_">$op{$_}</option>\n|;
+      }
+    }
+
+    # 検索実行
+    $in->{word} = Jcode->new($in->{word})->sjis if ($config->{chg_code} == 1);
+    my @log = search($in->{word},$in->{cond}) if ($in->{word} ne '');
+
+    # テンプレート読み込み
+    open(IN,"$config->{tmpldir}/find.html") or error("open err: find.html");
+    my $tmpl = join('', <IN>);
+    close(IN);
+
+    # 文字置換
+    $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
+    $tmpl =~ s/<!-- op_cond -->/$op_cond/;
+    $tmpl =~ s/!word!/$in->{word}/;
+
+    # テンプレート分割
+    my ($head,$loop,$foot) = $tmpl =~ /(.+)<!-- loop_begin -->(.+)<!-- loop_end -->(.+)/s
+        ? ($1,$2,$3) : error("テンプレート不正");
+
+    # ヘッダ部
+    print "Content-type: text/html; charset=shift_jis\n\n";
+    print $head;
+
+    # ループ部
+    foreach (@log) {
+      my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
+      $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
+      $com  = autolink($com) if ($config->{autolink});
+      $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
+      $url  = qq|<a href="$url" target="_blank">$url</a>| if ($url);
+
+      my $tmp = $loop;
+      $tmp =~ s/!sub!/$sub/g;
+      $tmp =~ s/!date!/$date/g;
+      $tmp =~ s/!name!/$name/g;
+      $tmp =~ s/!home!/$url/g;
+      $tmp =~ s/!comment!/$com/g;
+      print $tmp;
+    }
+
+    # フッタ
+    footer($foot);
+
+  }
+
+  # 留意事項表示
+  if ($in->{mode} eq 'note') {
+    open(IN,"$config->{tmpldir}/note.html") or error("open err: note.html");
+    my $tmpl = join('', <IN>);
+    close(IN);
+
+    print "Content-type: text/html; charset=shift_jis\n\n";
+    print $tmpl;
+  }
+  
+  #  記事表示
   # レス処理
   $in->{res} =~ s/\D//g;
   my %res;
@@ -129,324 +359,6 @@ sub bbs_list {
 
   # フッタ
   footer($foot);
-}
-
-
-#  記事書込
-
-sub regist {
-  # 仮
-  my $in;
-  
-  # 投稿チェック
-  if ($config->{postonly} && $ENV{REQUEST_METHOD} ne 'POST') {
-    error("不正なリクエストです");
-  }
-
-  # 不要改行カット
-  $in->{sub}  =~ s|<br />||g;
-  $in->{name} =~ s|<br />||g;
-  $in->{pwd}  =~ s|<br />||g;
-  $in->{captcha} =~ s|<br />||g;
-  $in->{comment} =~ s|(<br />)+$||g;
-
-  # チェック
-  if ($config->{no_wd}) { no_wd(); }
-  if ($config->{jp_wd}) { jp_wd(); }
-  if ($config->{urlnum} > 0) { urlnum(); }
-
-  # 画像認証チェック
-  if ($config->{use_captcha} > 0) {
-    require $config->{captcha_pl};
-    if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
-      error("画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください");
-    }
-
-    # 投稿キーチェック
-    # -1 : キー不一致
-    #  0 : 制限時間オーバー
-    #  1 : キー一致
-    my $chk = cap::check($in->{captcha},$in->{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
-    if ($chk == 0) {
-      error("画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください");
-    } elsif ($chk == -1) {
-      error("画像認証が不正です。<br />投稿フォームに戻って再読込み後再入力してください");
-    }
-  }
-
-  # 未入力の場合
-  if ($in->{url} eq "http://") { $in->{url} = ""; }
-  $in->{sub} ||= '無題';
-
-  # フォーム内容をチェック
-  my $err;
-  if ($in->{name} eq "") { $err .= "名前が入力されていません<br />"; }
-  if ($in->{comment} eq "") { $err .= "コメントが入力されていません<br />"; }
-  if ($in->{email} ne '' && $in->{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
-    $err .= "Ｅメールの入力内容が不正です<br />";
-  }
-  if ($in->{url} ne '' && $in->{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
-    $err .= "参照先URLの入力内容が不正です<br />";
-  }
-  if ($err) { error($err); }
-
-  # コード変換
-  if ($config->{chg_code} == 1) {
-    require Jcode;
-    $in->{name} = Jcode->new($in->{name})->sjis;
-    $in->{sub}  = Jcode->new($in->{sub})->sjis;
-    $in->{comment} = Jcode->new($in->{comment})->sjis;
-  }
-
-  # ホスト取得
-  my ($host,$addr) = get_host();
-
-  # 削除キー暗号化
-  my $pwd = encrypt($in->{pwd}) if ($in->{pwd} ne "");
-
-  # 時間取得
-  my $time = time;
-  my ($min,$hour,$mday,$mon,$year,$wday) = (localtime($time))[1..6];
-  my @wk = ('Sun','Mon','Tue','Wed','Thu','Fri','Sat');
-  my $date = sprintf("%04d/%02d/%02d(%s) %02d:%02d",
-        $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
-
-  # 先頭記事読み取り
-  open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
-  eval "flock(DAT, 2);";
-  my $top = <DAT>;
-
-  # 重複投稿チェック
-  my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/,$top);
-  if ($in->{name} eq $nam && $in->{comment} eq $com) {
-    close(DAT);
-    error("二重投稿は禁止です");
-  }
-
-  # 連続投稿チェック
-  my $flg;
-  if ($config->{regCtl} == 1) {
-    if ($host eq $hos && $time - $tim < $config->{wait}) { $flg = 1; }
-  } elsif ($config->{regCtl} == 2) {
-    if ($time - $tim < $config->{wait}) { $flg = 1; }
-  }
-  if ($flg) {
-    close(DAT);
-    error("現在投稿制限中です。もうしばらくたってから投稿をお願いします");
-  }
-
-  # 記事No採番
-  $no++;
-
-  # 記事数調整
-  my @data = ($top);
-  my $i = 0;
-  while (<DAT>) {
-    $i++;
-    push(@data,$_);
-
-    last if ($i >= $config->{maxlog}-1);
-  }
-
-  # 更新
-  seek(DAT, 0, 0);
-  print DAT "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
-  print DAT @data;
-  truncate(DAT, tell(DAT));
-  close(DAT);
-
-  # クッキー格納
-  set_cookie($in->{name},$in->{email},$in->{url}) if ($in->{cookie} == 1);
-
-  # メール通知
-  mail_to($date,$host) if ($config->{mailing} == 1);
-
-  # 完了画面
-  message("ありがとうございます。記事を受理しました。");
-}
-
-
-#  ワード検索
-
-sub find_data {
-  # 仮
-  my $in;
-  
-  # 条件
-  $in->{cond} =~ s/\D//g;
-  $in->{word} =~ s|<br />||g;
-
-  # 検索条件プルダウン
-  my %op = (1 => 'AND', 0 => 'OR');
-  my $op_cond;
-  foreach (1,0) {
-    if ($in->{cond} eq $_) {
-      $op_cond .= qq|<option value="$_" selected="selected">$op{$_}</option>\n|;
-    } else {
-      $op_cond .= qq|<option value="$_">$op{$_}</option>\n|;
-    }
-  }
-
-  # 検索実行
-  $in->{word} = Jcode->new($in->{word})->sjis if ($config->{chg_code} == 1);
-  my @log = search($in->{word},$in->{cond}) if ($in->{word} ne '');
-
-  # テンプレート読み込み
-  open(IN,"$config->{tmpldir}/find.html") or error("open err: find.html");
-  my $tmpl = join('', <IN>);
-  close(IN);
-
-  # 文字置換
-  $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
-  $tmpl =~ s/<!-- op_cond -->/$op_cond/;
-  $tmpl =~ s/!word!/$in->{word}/;
-
-  # テンプレート分割
-  my ($head,$loop,$foot) = $tmpl =~ /(.+)<!-- loop_begin -->(.+)<!-- loop_end -->(.+)/s
-      ? ($1,$2,$3) : error("テンプレート不正");
-
-  # ヘッダ部
-  print "Content-type: text/html; charset=shift_jis\n\n";
-  print $head;
-
-  # ループ部
-  foreach (@log) {
-    my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
-    $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
-    $com  = autolink($com) if ($config->{autolink});
-    $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
-    $url  = qq|<a href="$url" target="_blank">$url</a>| if ($url);
-
-    my $tmp = $loop;
-    $tmp =~ s/!sub!/$sub/g;
-    $tmp =~ s/!date!/$date/g;
-    $tmp =~ s/!name!/$name/g;
-    $tmp =~ s/!home!/$url/g;
-    $tmp =~ s/!comment!/$com/g;
-    print $tmp;
-  }
-
-  # フッタ
-  footer($foot);
-}
-
-
-#  検索実行
-
-sub search {
-  my ($word,$cond) = @_;
-
-  # キーワードを配列化
-  $word =~ s/\x81\x40/ /g;
-  my @wd = split(/\s+/,$word);
-
-  # キーワード検索準備（Shift-JIS定義）
-  my $ascii = '[\x00-\x7F]';
-  my $hanka = '[\xA1-\xDF]';
-  my $kanji = '[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]';
-
-  # 検索処理
-  my @log;
-  open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
-  while (<IN>) {
-    my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
-
-    my $flg;
-    foreach my $wd (@wd) {
-      if ("$nam $eml $sub $com $url" =~ /^(?:$ascii|$hanka|$kanji)*?\Q$wd\E/i) {
-        $flg++;
-        if ($cond == 0) { last; }
-      } else {
-        if ($cond == 1) { $flg = 0; last; }
-      }
-    }
-    next if (!$flg);
-
-    push(@log,$_);
-  }
-  close(IN);
-
-  # 検索結果
-  return @log;
-}
-
-
-#  留意事項表示
-
-sub note_page {
-  open(IN,"$config->{tmpldir}/note.html") or error("open err: note.html");
-  my $tmpl = join('', <IN>);
-  close(IN);
-
-  print "Content-type: text/html; charset=shift_jis\n\n";
-  print $tmpl;
-  exit;
-}
-
-
-#  ユーザ記事削除
-
-sub dele_data {
-  # 仮
-  my $in;
-  
-  # 入力チェック
-  if ($in->{num} eq '' or $in->{pwd} eq '') {
-    error("削除Noまたは削除キーが入力モレです");
-  }
-
-  my ($flg,$crypt,@log);
-  open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
-  eval "flock(DAT, 2);";
-  while (<DAT>) {
-    my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
-
-    if ($in->{num} == $no) {
-      $flg++;
-      $crypt = $pw;
-      next;
-    }
-    push(@log,$_);
-  }
-
-  if (!$flg or !$crypt) {
-    close(DAT);
-    error("削除キーが設定されていないか又は記事が見当たりません");
-  }
-
-  # 削除キーを照合
-  if (decrypt($in->{pwd},$crypt) != 1) {
-    close(DAT);
-    error("認証できません");
-  }
-
-  # ログ更新
-  seek(DAT, 0, 0);
-  print DAT @log;
-  truncate(DAT, tell(DAT));
-  close(DAT);
-
-  # 完了
-  message("記事を削除しました");
-}
-
-
-#  エラー画面
-
-sub error {
-  my $err = shift;
-
-  open(IN,"$config->{tmpldir}/error.html") or die;
-  my $tmpl = join('', <IN>);
-  close(IN);
-
-  $tmpl =~ s/!error!/$err/g;
-
-  print "Content-type: text/html; charset=shift_jis\n\n";
-  print $tmpl;
-  exit;
-}
-
 
 #  メール送信
 
@@ -1278,3 +1190,39 @@ exit;
 
 app->start;
 
+sub search {
+  my ($word,$cond) = @_;
+
+  # キーワードを配列化
+  $word =~ s/\x81\x40/ /g;
+  my @wd = split(/\s+/,$word);
+
+  # キーワード検索準備（Shift-JIS定義）
+  my $ascii = '[\x00-\x7F]';
+  my $hanka = '[\xA1-\xDF]';
+  my $kanji = '[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]';
+
+  # 検索処理
+  my @log;
+  open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
+  while (<IN>) {
+    my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
+
+    my $flg;
+    foreach my $wd (@wd) {
+      if ("$nam $eml $sub $com $url" =~ /^(?:$ascii|$hanka|$kanji)*?\Q$wd\E/i) {
+        $flg++;
+        if ($cond == 0) { last; }
+      } else {
+        if ($cond == 1) { $flg = 0; last; }
+      }
+    }
+    next if (!$flg);
+
+    push(@log,$_);
+  }
+  close(IN);
+
+  # 検索結果
+  return @log;
+}
