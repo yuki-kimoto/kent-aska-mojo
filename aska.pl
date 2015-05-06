@@ -29,9 +29,9 @@ get '/' => sub {
     $in->{comment} =~ s|(<br />)+$||g;
 
     # チェック
-    if ($config->{no_wd}) { no_wd(); }
-    if ($config->{jp_wd}) { jp_wd(); }
-    if ($config->{urlnum} > 0) { urlnum(); }
+    if ($config->{no_wd}) { no_wd($in); }
+    if ($config->{jp_wd}) { jp_wd($in); }
+    if ($config->{urlnum} > 0) { urlnum($in); }
 
     # 画像認証チェック
     if ($config->{use_captcha} > 0) {
@@ -137,7 +137,7 @@ get '/' => sub {
     set_cookie($in->{name},$in->{email},$in->{url}) if ($in->{cookie} == 1);
 
     # メール通知
-    mail_to($date,$host) if ($config->{mailing} == 1);
+    mail_to($in, $date,$host) if ($config->{mailing} == 1);
 
     # 完了画面
     message("ありがとうございます。記事を受理しました。");
@@ -359,343 +359,47 @@ get '/' => sub {
 
   # フッタ
   footer($foot);
-
-#  メール送信
-
-sub mail_to {
-  # 仮
-  my $in;
-  
-  my ($date,$host) = @_;
-
-  # 件名をMIMEエンコード
-  if ($config->{chg_code} == 0) { require Jcode; }
-  my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
-
-  # コメント内の改行復元
-  my $com = $in->{comment};
-  $com =~ s/<br>/\n/g;
-  $com =~ s/&lt;/>/g;
-  $com =~ s/&gt;/</g;
-  $com =~ s/&quot;/"/g;
-  $com =~ s/&amp;/&/g;
-  $com =~ s/&#39;/'/g;
-
-  # メール本文を定義
-  my $mbody = <<EOM;
-掲示板に投稿がありました。
-
-投稿日：$date
-ホスト：$host
-
-件名  ：$in->{sub}
-お名前：$in->{name}
-E-mail：$in->{email}
-URL   ：$in->{url}
-
-$com
-EOM
-
-  # JISコード変換
-  $mbody = Jcode->new($mbody,'sjis')->jis;
-
-  # メールアドレスがない場合は管理者メールに置き換え
-  $in->{email} ||= $config->{mailto};
-
-  # sendmailコマンド
-  my $scmd = "$config->{sendmail} -t -i";
-  if ($config->{sendm_f}) {
-    $scmd .= " -f $in->{email}";
-  }
-
-  # 送信
-  open(MAIL,"| $scmd") or error("送信失敗");
-  print MAIL "To: $config->{mailto}\n";
-  print MAIL "From: $in->{email}\n";
-  print MAIL "Subject: $msub\n";
-  print MAIL "MIME-Version: 1.0\n";
-  print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
-  print MAIL "Content-Transfer-Encoding: 7bit\n";
-  print MAIL "X-Mailer: $config->{version}\n\n";
-  print MAIL "$mbody\n";
-  close(MAIL);
-}
-
-
-#  フッター
-
-sub footer {
-  my $foot = shift;
-
-  # 著作権表記（削除・改変禁止）
-  my $copy = <<EOM;
-<p style="margin-top:2em;text-align:center;font-family:Verdana,Helvetica,Arial;font-size:10px;">
-- <a href="http://www.kent-web.com/" target="_top">ASKA BBS</a> -
-</p>
-EOM
-
-  if ($foot =~ /(.+)(<\/body[^>]*>.*)/si) {
-    print "$1$copy$2\n";
-  } else {
-    print "$foot$copy\n";
-    print "</body></html>\n";
-  }
-  exit;
-}
-
-
-#  自動リンク
-
-sub autolink {
-  my $text = shift;
-
-  $text =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
-  return $text;
-}
-
-
-#  禁止ワードチェック
-
-sub no_wd {
-  # 仮
-  my $in;
-  
-  my $flg;
-  foreach ( split(/,/,$config->{no_wd}) ) {
-    if (index("$in->{name} $in->{sub} $in->{comment}", $_) >= 0) {
-      $flg = 1;
-      last;
-    }
-  }
-  if ($flg) { error("禁止ワードが含まれています"); }
-}
-
-
-#  日本語チェック
-
-sub jp_wd {
-  # 仮
-  my $in;
-  
-  if ($in->{comment} !~ /[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]/) {
-    error("メッセージに日本語が含まれていません");
-  }
-}
-
-
-#  URL個数チェック
-
-sub urlnum {
-  # 仮
-  my $in;
-  
-  my $com = $in->{comment};
-  my ($num) = ($com =~ s|(https?://)|$1|ig);
-  if ($num > $config->{urlnum}) {
-    error("コメント中のURLアドレスは最大$config->{urlnum}個までです");
-  }
-}
-
-
-#  アクセス制限
-
-sub get_host {
-  # IP&ホスト取得
-  my $host = $ENV{REMOTE_HOST};
-  my $addr = $ENV{REMOTE_ADDR};
-  if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
-    $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
-  }
-
-  # IPチェック
-  my $flg;
-  foreach ( split(/\s+/,$config->{deny_addr}) ) {
-    s/\./\\\./g;
-    s/\*/\.\*/g;
-
-    if ($addr =~ /^$_/i) { $flg++; last; }
-  }
-  if ($flg) {
-    error("アクセスを許可されていません");
-
-  # ホストチェック
-  } elsif ($host) {
-
-    foreach ( split(/\s+/,$config->{deny_host}) ) {
-      s/\./\\\./g;
-      s/\*/\.\*/g;
-
-      if ($host =~ /$_$/i) { $flg++; last; }
-    }
-    if ($flg) {
-      error("アクセスを許可されていません");
-    }
-  }
-
-  if ($host eq "") { $host = $addr; }
-  return ($host,$addr);
-}
-
-
-#  crypt暗号
-
-sub encrypt {
-  my $in = shift;
-
-  my @wd = (0 .. 9, 'a'..'z', 'A'..'Z', '.', '/');
-  srand;
-  my $salt = $wd[int(rand(@wd))] . $wd[int(rand(@wd))];
-  crypt($in,$salt) || crypt ($in,'$1$'.$salt);
-}
-
-
-#  crypt照合
-
-sub decrypt {
-  my ($in,$dec) = @_;
-
-  my $salt = $dec =~ /^\$1\$(.*)\$/ ? $1 : substr($dec,0,2);
-  if (crypt($in,$salt) eq $dec || crypt($in,'$1$'.$salt) eq $dec) {
-    return 1;
-  } else {
-    return 0;
-  }
-}
-
-
-#  完了メッセージ
-
-sub message {
-  my $msg = shift;
-
-  open(IN,"$config->{tmpldir}/message.html") or error("open err: message.html");
-  my $tmpl = join('', <IN>);
-  close(IN);
-
-  $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
-  $tmpl =~ s/!message!/$msg/g;
-
-  print "Content-type: text/html; charset=shift_jis\n\n";
-  print $tmpl;
-  exit;
-}
-
-
-#  ページ送り作成
-
-sub make_pager {
-  my ($i,$pg) = @_;
-
-  # ページ繰越数定義
-  $config->{pg_max} ||= 10;
-  my $next = $pg + $config->{pg_max};
-  my $back = $pg - $config->{pg_max};
-
-  # ページ繰越ボタン作成
-  my @pg;
-  if ($back >= 0 || $next < $i) {
-    my $flg;
-    my ($w,$x,$y,$z) = (0,1,0,$i);
-    while ($z > 0) {
-      if ($pg == $y) {
-        $flg++;
-        push(@pg,qq!<li><span>$x</span></li>\n!);
-      } else {
-        push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
-      }
-      $x++;
-      $y += $config->{pg_max};
-      $z -= $config->{pg_max};
-
-      if ($flg) { $w++; }
-      last if ($w >= 5 && @pg >= 10);
-    }
-  }
-  while( @pg >= 11 ) { shift(@pg); }
-  my $ret = join('', @pg);
-  if ($back >= 0) {
-    $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
-  }
-  if ($next < $i) {
-    $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
-  }
-  
-  # 結果を返す
-  return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
-}
-
-
-#  クッキー発行
-
-sub set_cookie {
-  my @data = @_;
-
-  # 60日間有効
-  my ($sec,$min,$hour,$mday,$mon,$year,$wday,undef,undef) = gmtime(time + 60*24*60*60);
-  my @mon  = qw|Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec|;
-  my @week = qw|Sun Mon Tue Wed Thu Fri Sat|;
-
-  # 時刻フォーマット
-  my $gmt = sprintf("%s, %02d-%s-%04d %02d:%02d:%02d GMT",
-        $week[$wday],$mday,$mon[$mon],$year+1900,$hour,$min,$sec);
-
-  # URLエンコード
-  my $cook;
-  foreach (@data) {
-    s/(\W)/sprintf("%%%02X", unpack("C", $1))/eg;
-    $cook .= "$_<>";
-  }
-
-  print "Set-Cookie: $config->{cookie_id}=$cook; expires=$gmt\n";
-}
-
-
-#  クッキー取得
-
-sub get_cookie {
-  # クッキー取得
-  my $cook = $ENV{HTTP_COOKIE};
-
-  # 該当IDを取り出す
-  my %cook;
-  foreach ( split(/;/,$cook) ) {
-    my ($key,$val) = split(/=/);
-    $key =~ s/\s//g;
-    $cook{$key} = $val;
-  }
-
-  # URLデコード
-  my @cook;
-  foreach ( split(/<>/,$cook{$config->{cookie_id}}) ) {
-    s/%([0-9A-Fa-f][0-9A-Fa-f])/pack("H2", $1)/eg;
-    s/[&"'<>]//g;
-
-    push(@cook,$_);
-  }
-  return @cook;
-}
-
-
 };
 
 get '/admin' => sub {
   my $self = shift;
 
-# データ受理
-my $in = $self->req->params->to_hash;
+  # データ受理
+  my $in = $self->req->params->to_hash;
 
-# 認証
-check_passwd();
+  # パスワードが未入力の場合は入力フォーム画面
+  if ($in->{pass} eq "") {
+    header("入室画面");
+    print <<EOM;
+<div align="center">
+<form action="$config->{admin_cgi}" method="post">
+<table width="410" style="margin-top:50px">
+<tr>
+  <td height="50" align="center">
+    <fieldset><legend>管理パスワード入力</legend><br>
+    <input type="password" name="pass" size="26">
+    <input type="submit" value=" 認証 "><br><br>
+    </fieldset>
+  </td>
+</tr>
+</table>
+</form>
+<script language="javascript">
+<!--
+self.document.forms[0].pass.focus();
+//-->
+</script>
+</div>
+</body>
+</html>
+EOM
+  }
+  # パスワード認証
+  elsif ($in->{pass} ne $config->{password}) {
+    error("認証できません");
+  }
 
-# 管理モード
-admin_mode();
-
-
-#  管理モード
-
-sub admin_mode {
-  # 仮
-  my $in;
+  # 管理モード
   
   # 削除処理
   if ($in->{job_dele} && $in->{no}) {
@@ -740,8 +444,55 @@ sub admin_mode {
     close(IN);
 
     # 修正フォームへ
-    edit_form($log);
+    {
+      my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/,$log);
 
+      $com =~ s|<br( /)?>|\n|g;
+      $url ||= "http://";
+
+      header("管理モード ＞ 修正フォーム");
+      print <<EOM;
+    <div align="right">
+    <form action="$config->{admin_cgi}" method="post">
+    <input type="hidden" name="mode" value="admin">
+    <input type="hidden" name="pass" value="$in->{pass}">
+    <input type="submit" value="&lt; 前画面">
+    </form>
+    </div>
+    <div class="ttl">■ 編集フォーム</div>
+    <ul>
+    <li>変更する部分のみ修正して送信ボタンを押してください。
+    </ul>
+    <form action="$config->{admin_cgi}" method="post">
+    <input type="hidden" name="mode" value="admin">
+    <input type="hidden" name="job" value="edit">
+    <input type="hidden" name="no" value="$no">
+    <input type="hidden" name="pass" value="$in->{pass}">
+    <table class="form-tbl">
+    <tr>
+      <th>おなまえ</th>
+      <td><input type="text" name="name" size="28" value="$nam"></td>
+    </tr><tr>
+      <th>Ｅメール</th>
+      <td><input type="text" name="email" size="28" value="$eml"></td>
+    </tr><tr>
+      <th>タイトル</th>
+      <td><input type="text" name="sub" size="36" value="$sub"></td>
+    </tr><tr>
+      <th>参照先</th>
+      <td><input type="text" name="url" size="50" value="$url"></td>
+    </tr><tr>
+      <th>内容</th>
+      <td><textarea name="comment" cols="56" rows="7">$com</textarea></td>
+    </tr>
+    </table>
+    <input type="submit" value="送信する">
+    <input type="reset" value="リセット">
+    </form>
+    </body>
+    </html>
+EOM
+    }
   # 修正実行
   } elsif ($in->{job} eq "edit") {
 
@@ -844,215 +595,6 @@ EOM
 </body>
 </html>
 EOM
-  exit;
-}
-
-
-#  修正フォーム
-
-sub edit_form {
-  # 仮
-  my $in;
-  
-  my $log = shift;
-  my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/,$log);
-
-  $com =~ s|<br( /)?>|\n|g;
-  $url ||= "http://";
-
-  header("管理モード ＞ 修正フォーム");
-  print <<EOM;
-<div align="right">
-<form action="$config->{admin_cgi}" method="post">
-<input type="hidden" name="mode" value="admin">
-<input type="hidden" name="pass" value="$in->{pass}">
-<input type="submit" value="&lt; 前画面">
-</form>
-</div>
-<div class="ttl">■ 編集フォーム</div>
-<ul>
-<li>変更する部分のみ修正して送信ボタンを押してください。
-</ul>
-<form action="$config->{admin_cgi}" method="post">
-<input type="hidden" name="mode" value="admin">
-<input type="hidden" name="job" value="edit">
-<input type="hidden" name="no" value="$no">
-<input type="hidden" name="pass" value="$in->{pass}">
-<table class="form-tbl">
-<tr>
-  <th>おなまえ</th>
-  <td><input type="text" name="name" size="28" value="$nam"></td>
-</tr><tr>
-  <th>Ｅメール</th>
-  <td><input type="text" name="email" size="28" value="$eml"></td>
-</tr><tr>
-  <th>タイトル</th>
-  <td><input type="text" name="sub" size="36" value="$sub"></td>
-</tr><tr>
-  <th>参照先</th>
-  <td><input type="text" name="url" size="50" value="$url"></td>
-</tr><tr>
-  <th>内容</th>
-  <td><textarea name="comment" cols="56" rows="7">$com</textarea></td>
-</tr>
-</table>
-<input type="submit" value="送信する">
-<input type="reset" value="リセット">
-</form>
-</body>
-</html>
-EOM
-  exit;
-}
-
-
-#  HTMLヘッダー
-
-sub header {
-  my $ttl = shift;
-
-  print <<EOM;
-Content-type: text/html; charset=shift_jis
-
-<html>
-<head>
-<meta http-equiv="content-type" content="text/html; charset=shift_jis">
-<meta http-equiv="content-style-type" content="text/css">
-<style type="text/css">
-<!--
-body,td,th { font-size:80%; background:#f0f0f0; font-family:Verdana,"MS PGothic","Osaka",Arial,sans-serif; }
-p.ttl { font-weight:bold; color:#004080; border-bottom:1px solid #004080; padding:2px; }
-p.err { color:#dd0000; }
-p.msg { color:#006400; }
-table.form-tbl { border:1px solid #8080C0; border-collapse:collapse; margin:1em 0; }
-table.form-tbl th { border:1px solid #8080C0; background:#DCDCED; padding:5px; }
-table.form-tbl td { border:1px solid #8080C0; background:#fff; padding:5px; }
-div.ttl { border-bottom:1px solid #004080; padding:4px; color:#004080; font-weight:bold; margin:1em 0; }
-div.btn input { width:60px; }
-div.art { border-top:1px dotted gray; padding:5px; margin-top:10px; }
-div.art span, div.art strong { color:green; }
-div.com { margin-left:2em; color:#804000; font-size:90%; }
--->
-</style>
-<title>$ttl</title>
-</head>
-<body>
-EOM
-}
-
-
-#  パスワード認証
-
-sub check_passwd {
-  # 仮
-  my $in;
-  
-  # パスワードが未入力の場合は入力フォーム画面
-  if ($in->{pass} eq "") {
-    enter_form();
-
-  # パスワード認証
-  } elsif ($in->{pass} ne $config->{password}) {
-    error("認証できません");
-  }
-}
-
-
-#  入室画面
-
-sub enter_form {
-  header("入室画面");
-  print <<EOM;
-<div align="center">
-<form action="$config->{admin_cgi}" method="post">
-<table width="410" style="margin-top:50px">
-<tr>
-  <td height="50" align="center">
-    <fieldset><legend>管理パスワード入力</legend><br>
-    <input type="password" name="pass" size="26">
-    <input type="submit" value=" 認証 "><br><br>
-    </fieldset>
-  </td>
-</tr>
-</table>
-</form>
-<script language="javascript">
-<!--
-self.document.forms[0].pass.focus();
-//-->
-</script>
-</div>
-</body>
-</html>
-EOM
-  exit;
-}
-
-
-#  エラー
-
-sub error_ {
-  my $err = shift;
-
-  header("ERROR!");
-  print <<EOM;
-<div align="center">
-<hr width="350">
-<h3>ERROR!</h3>
-<p class="err">$err</p>
-<hr width="350">
-<form>
-<input type="button" value="前画面に戻る" onclick="history.back()">
-</form>
-</div>
-</body>
-</html>
-EOM
-  exit;
-}
-
-
-#  完了メッセージ
-
-sub message_ {
-  my $msg = shift;
-  
-  # 仮
-  my $in;
-
-  header("完了");
-  print <<EOM;
-<div align="center" style="margin-top:3em;">
-<hr width="350">
-<p class="msg">$msg</p>
-<hr width="350">
-<form action="$config->{admin_cgi}" method="post">
-<input type="hidden" name="pass" value="$in->{pass}">
-<input type="submit" value="管理画面に戻る">
-</form>
-</div>
-</body>
-</html>
-EOM
-  exit;
-}
-
-
-#  文字数カット for Shift-JIS
-
-sub cut_str {
-  my $str = shift;
-  $str =~ s|<br( /)?>||g;
-
-  my $i = 0;
-  my $ret;
-  while($str =~ /([\x00-\x7F\xA1-\xDF]|[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC])/gx) {
-    $i++;
-    $ret .= $1;
-    last if ($i >= 40);
-  }
-  return $ret;
-}
 
 };
 
@@ -1225,4 +767,272 @@ sub search {
 
   # 検索結果
   return @log;
+}
+
+sub mail_to {
+
+  my ($in, $date,$host) = @_;
+
+  # 件名をMIMEエンコード
+  if ($config->{chg_code} == 0) { require Jcode; }
+  my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
+
+  # コメント内の改行復元
+  my $com = $in->{comment};
+  $com =~ s/<br>/\n/g;
+  $com =~ s/&lt;/>/g;
+  $com =~ s/&gt;/</g;
+  $com =~ s/&quot;/"/g;
+  $com =~ s/&amp;/&/g;
+  $com =~ s/&#39;/'/g;
+
+  # メール本文を定義
+  my $mbody = <<EOM;
+掲示板に投稿がありました。
+
+投稿日：$date
+ホスト：$host
+
+件名  ：$in->{sub}
+お名前：$in->{name}
+E-mail：$in->{email}
+URL   ：$in->{url}
+
+$com
+EOM
+
+  # JISコード変換
+  $mbody = Jcode->new($mbody,'sjis')->jis;
+
+  # メールアドレスがない場合は管理者メールに置き換え
+  $in->{email} ||= $config->{mailto};
+
+  # sendmailコマンド
+  my $scmd = "$config->{sendmail} -t -i";
+  if ($config->{sendm_f}) {
+    $scmd .= " -f $in->{email}";
+  }
+
+  # 送信
+  open(MAIL,"| $scmd") or error("送信失敗");
+  print MAIL "To: $config->{mailto}\n";
+  print MAIL "From: $in->{email}\n";
+  print MAIL "Subject: $msub\n";
+  print MAIL "MIME-Version: 1.0\n";
+  print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
+  print MAIL "Content-Transfer-Encoding: 7bit\n";
+  print MAIL "X-Mailer: $config->{version}\n\n";
+  print MAIL "$mbody\n";
+  close(MAIL);
+}
+
+#  自動リンク
+sub autolink {
+  my $text = shift;
+
+  $text =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
+  return $text;
+}
+
+#  禁止ワードチェック
+sub no_wd {
+  my $in = shift;
+  
+  my $flg;
+  foreach ( split(/,/,$config->{no_wd}) ) {
+    if (index("$in->{name} $in->{sub} $in->{comment}", $_) >= 0) {
+      $flg = 1;
+      last;
+    }
+  }
+  if ($flg) { error("禁止ワードが含まれています"); }
+}
+
+#  日本語チェック
+sub jp_wd {
+  my $in = shift;
+  
+  if ($in->{comment} !~ /[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]/) {
+    error("メッセージに日本語が含まれていません");
+  }
+}
+
+#  URL個数チェック
+sub urlnum {
+  # 仮
+  my $in;
+  
+  my $com = $in->{comment};
+  my ($num) = ($com =~ s|(https?://)|$1|ig);
+  if ($num > $config->{urlnum}) {
+    error("コメント中のURLアドレスは最大$config->{urlnum}個までです");
+  }
+}
+
+#  アクセス制限
+sub get_host {
+  # IP&ホスト取得
+  my $host = $ENV{REMOTE_HOST};
+  my $addr = $ENV{REMOTE_ADDR};
+  if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
+    $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
+  }
+
+  # IPチェック
+  my $flg;
+  foreach ( split(/\s+/,$config->{deny_addr}) ) {
+    s/\./\\\./g;
+    s/\*/\.\*/g;
+
+    if ($addr =~ /^$_/i) { $flg++; last; }
+  }
+  if ($flg) {
+    error("アクセスを許可されていません");
+
+  # ホストチェック
+  } elsif ($host) {
+
+    foreach ( split(/\s+/,$config->{deny_host}) ) {
+      s/\./\\\./g;
+      s/\*/\.\*/g;
+
+      if ($host =~ /$_$/i) { $flg++; last; }
+    }
+    if ($flg) {
+      error("アクセスを許可されていません");
+    }
+  }
+
+  if ($host eq "") { $host = $addr; }
+  return ($host,$addr);
+}
+
+#  crypt暗号
+sub encrypt {
+  my $in = shift;
+
+  my @wd = (0 .. 9, 'a'..'z', 'A'..'Z', '.', '/');
+  srand;
+  my $salt = $wd[int(rand(@wd))] . $wd[int(rand(@wd))];
+  crypt($in,$salt) || crypt ($in,'$1$'.$salt);
+}
+
+
+#  crypt照合
+sub decrypt {
+  my ($in,$dec) = @_;
+
+  my $salt = $dec =~ /^\$1\$(.*)\$/ ? $1 : substr($dec,0,2);
+  if (crypt($in,$salt) eq $dec || crypt($in,'$1$'.$salt) eq $dec) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+
+#  完了メッセージ
+sub message {
+  my $msg = shift;
+
+  open(IN,"$config->{tmpldir}/message.html") or error("open err: message.html");
+  my $tmpl = join('', <IN>);
+  close(IN);
+
+  $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
+  $tmpl =~ s/!message!/$msg/g;
+
+  print "Content-type: text/html; charset=shift_jis\n\n";
+  print $tmpl;
+  exit;
+}
+
+#  ページ送り作成
+sub make_pager {
+  my ($i,$pg) = @_;
+
+  # ページ繰越数定義
+  $config->{pg_max} ||= 10;
+  my $next = $pg + $config->{pg_max};
+  my $back = $pg - $config->{pg_max};
+
+  # ページ繰越ボタン作成
+  my @pg;
+  if ($back >= 0 || $next < $i) {
+    my $flg;
+    my ($w,$x,$y,$z) = (0,1,0,$i);
+    while ($z > 0) {
+      if ($pg == $y) {
+        $flg++;
+        push(@pg,qq!<li><span>$x</span></li>\n!);
+      } else {
+        push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
+      }
+      $x++;
+      $y += $config->{pg_max};
+      $z -= $config->{pg_max};
+
+      if ($flg) { $w++; }
+      last if ($w >= 5 && @pg >= 10);
+    }
+  }
+  while( @pg >= 11 ) { shift(@pg); }
+  my $ret = join('', @pg);
+  if ($back >= 0) {
+    $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
+  }
+  if ($next < $i) {
+    $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
+  }
+  
+  # 結果を返す
+  return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
+}
+
+
+#  クッキー発行
+sub set_cookie {
+  my @data = @_;
+
+  # 60日間有効
+  my ($sec,$min,$hour,$mday,$mon,$year,$wday,undef,undef) = gmtime(time + 60*24*60*60);
+  my @mon  = qw|Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec|;
+  my @week = qw|Sun Mon Tue Wed Thu Fri Sat|;
+
+  # 時刻フォーマット
+  my $gmt = sprintf("%s, %02d-%s-%04d %02d:%02d:%02d GMT",
+        $week[$wday],$mday,$mon[$mon],$year+1900,$hour,$min,$sec);
+
+  # URLエンコード
+  my $cook;
+  foreach (@data) {
+    s/(\W)/sprintf("%%%02X", unpack("C", $1))/eg;
+    $cook .= "$_<>";
+  }
+
+  print "Set-Cookie: $config->{cookie_id}=$cook; expires=$gmt\n";
+}
+
+#  クッキー取得
+sub get_cookie {
+  # クッキー取得
+  my $cook = $ENV{HTTP_COOKIE};
+
+  # 該当IDを取り出す
+  my %cook;
+  foreach ( split(/;/,$cook) ) {
+    my ($key,$val) = split(/=/);
+    $key =~ s/\s//g;
+    $cook{$key} = $val;
+  }
+
+  # URLデコード
+  my @cook;
+  foreach ( split(/<>/,$cook{$config->{cookie_id}}) ) {
+    s/%([0-9A-Fa-f][0-9A-Fa-f])/pack("H2", $1)/eg;
+    s/[&"'<>]//g;
+
+    push(@cook,$_);
+  }
+  return @cook;
 }
