@@ -11,13 +11,13 @@ get '/' => sub {
   my $self = shift;
 
 # データ受理
-my %in = parse_form();
+my $in = $self->req->params->to_hash;
 
 # 処理分岐
-if ($in{mode} eq 'regist') { regist(); }
-if ($in{mode} eq 'dele') { dele_data(); }
-if ($in{mode} eq 'find') { find_data(); }
-if ($in{mode} eq 'note') { note_page(); }
+if ($in->{mode} eq 'regist') { regist(); }
+if ($in->{mode} eq 'dele') { dele_data(); }
+if ($in->{mode} eq 'find') { find_data(); }
+if ($in->{mode} eq 'note') { note_page(); }
 bbs_list();
 
 
@@ -25,17 +25,17 @@ bbs_list();
 
 sub bbs_list {
   # 仮
-  my %in;
+  my $in;
     
   # レス処理
-  $in{res} =~ s/\D//g;
+  $in->{res} =~ s/\D//g;
   my %res;
-  if ($in{res}) {
+  if ($in->{res}) {
     my $flg;
     open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
     while (<IN>) {
       my ($no,$sub,$com) = (split(/<>/))[0,4,5];
-      if ($in{res} == $no) {
+      if ($in->{res} == $no) {
         $flg++;
         $res{sub} = $sub;
         $res{com} = $com;
@@ -48,13 +48,13 @@ sub bbs_list {
 
     $res{sub} =~ s/^Re://g;
     $res{sub} =~ s/\[\d+\]\s?//g;
-    $res{sub} = "Re:[$in{res}] $res{sub}";
+    $res{sub} = "Re:[$in->{res}] $res{sub}";
     $res{com} = "&gt; $res{com}";
     $res{com} =~ s|<br( /)?>|\n&gt; |ig;
   }
 
   # ページ数定義
-  my $pg = $in{pg} || 0;
+  my $pg = $in->{pg} || 0;
 
   # データオープン
   my ($i,@log);
@@ -136,7 +136,7 @@ sub bbs_list {
 
 sub regist {
   # 仮
-  my %in;
+  my $in;
   
   # 投稿チェック
   if ($config->{postonly} && $ENV{REQUEST_METHOD} ne 'POST') {
@@ -144,11 +144,11 @@ sub regist {
   }
 
   # 不要改行カット
-  $in{sub}  =~ s|<br />||g;
-  $in{name} =~ s|<br />||g;
-  $in{pwd}  =~ s|<br />||g;
-  $in{captcha} =~ s|<br />||g;
-  $in{comment} =~ s|(<br />)+$||g;
+  $in->{sub}  =~ s|<br />||g;
+  $in->{name} =~ s|<br />||g;
+  $in->{pwd}  =~ s|<br />||g;
+  $in->{captcha} =~ s|<br />||g;
+  $in->{comment} =~ s|(<br />)+$||g;
 
   # チェック
   if ($config->{no_wd}) { no_wd(); }
@@ -158,7 +158,7 @@ sub regist {
   # 画像認証チェック
   if ($config->{use_captcha} > 0) {
     require $config->{captcha_pl};
-    if ($in{captcha} !~ /^\d{$config->{cap_len}}$/) {
+    if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
       error("画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください");
     }
 
@@ -166,7 +166,7 @@ sub regist {
     # -1 : キー不一致
     #  0 : 制限時間オーバー
     #  1 : キー一致
-    my $chk = cap::check($in{captcha},$in{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
+    my $chk = cap::check($in->{captcha},$in->{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
     if ($chk == 0) {
       error("画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください");
     } elsif ($chk == -1) {
@@ -175,17 +175,17 @@ sub regist {
   }
 
   # 未入力の場合
-  if ($in{url} eq "http://") { $in{url} = ""; }
-  $in{sub} ||= '無題';
+  if ($in->{url} eq "http://") { $in->{url} = ""; }
+  $in->{sub} ||= '無題';
 
   # フォーム内容をチェック
   my $err;
-  if ($in{name} eq "") { $err .= "名前が入力されていません<br />"; }
-  if ($in{comment} eq "") { $err .= "コメントが入力されていません<br />"; }
-  if ($in{email} ne '' && $in{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
+  if ($in->{name} eq "") { $err .= "名前が入力されていません<br />"; }
+  if ($in->{comment} eq "") { $err .= "コメントが入力されていません<br />"; }
+  if ($in->{email} ne '' && $in->{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
     $err .= "Ｅメールの入力内容が不正です<br />";
   }
-  if ($in{url} ne '' && $in{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
+  if ($in->{url} ne '' && $in->{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
     $err .= "参照先URLの入力内容が不正です<br />";
   }
   if ($err) { error($err); }
@@ -193,16 +193,16 @@ sub regist {
   # コード変換
   if ($config->{chg_code} == 1) {
     require Jcode;
-    $in{name} = Jcode->new($in{name})->sjis;
-    $in{sub}  = Jcode->new($in{sub})->sjis;
-    $in{comment} = Jcode->new($in{comment})->sjis;
+    $in->{name} = Jcode->new($in->{name})->sjis;
+    $in->{sub}  = Jcode->new($in->{sub})->sjis;
+    $in->{comment} = Jcode->new($in->{comment})->sjis;
   }
 
   # ホスト取得
   my ($host,$addr) = get_host();
 
   # 削除キー暗号化
-  my $pwd = encrypt($in{pwd}) if ($in{pwd} ne "");
+  my $pwd = encrypt($in->{pwd}) if ($in->{pwd} ne "");
 
   # 時間取得
   my $time = time;
@@ -218,7 +218,7 @@ sub regist {
 
   # 重複投稿チェック
   my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/,$top);
-  if ($in{name} eq $nam && $in{comment} eq $com) {
+  if ($in->{name} eq $nam && $in->{comment} eq $com) {
     close(DAT);
     error("二重投稿は禁止です");
   }
@@ -250,13 +250,13 @@ sub regist {
 
   # 更新
   seek(DAT, 0, 0);
-  print DAT "$no<>$date<>$in{name}<>$in{email}<>$in{sub}<>$in{comment}<>$in{url}<>$host<>$pwd<>$time<>\n";
+  print DAT "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
   print DAT @data;
   truncate(DAT, tell(DAT));
   close(DAT);
 
   # クッキー格納
-  set_cookie($in{name},$in{email},$in{url}) if ($in{cookie} == 1);
+  set_cookie($in->{name},$in->{email},$in->{url}) if ($in->{cookie} == 1);
 
   # メール通知
   mail_to($date,$host) if ($config->{mailing} == 1);
@@ -270,17 +270,17 @@ sub regist {
 
 sub find_data {
   # 仮
-  my %in;
+  my $in;
   
   # 条件
-  $in{cond} =~ s/\D//g;
-  $in{word} =~ s|<br />||g;
+  $in->{cond} =~ s/\D//g;
+  $in->{word} =~ s|<br />||g;
 
   # 検索条件プルダウン
   my %op = (1 => 'AND', 0 => 'OR');
   my $op_cond;
   foreach (1,0) {
-    if ($in{cond} eq $_) {
+    if ($in->{cond} eq $_) {
       $op_cond .= qq|<option value="$_" selected="selected">$op{$_}</option>\n|;
     } else {
       $op_cond .= qq|<option value="$_">$op{$_}</option>\n|;
@@ -288,8 +288,8 @@ sub find_data {
   }
 
   # 検索実行
-  $in{word} = Jcode->new($in{word})->sjis if ($config->{chg_code} == 1);
-  my @log = search($in{word},$in{cond}) if ($in{word} ne '');
+  $in->{word} = Jcode->new($in->{word})->sjis if ($config->{chg_code} == 1);
+  my @log = search($in->{word},$in->{cond}) if ($in->{word} ne '');
 
   # テンプレート読み込み
   open(IN,"$config->{tmpldir}/find.html") or error("open err: find.html");
@@ -299,7 +299,7 @@ sub find_data {
   # 文字置換
   $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
   $tmpl =~ s/<!-- op_cond -->/$op_cond/;
-  $tmpl =~ s/!word!/$in{word}/;
+  $tmpl =~ s/!word!/$in->{word}/;
 
   # テンプレート分割
   my ($head,$loop,$foot) = $tmpl =~ /(.+)<!-- loop_begin -->(.+)<!-- loop_end -->(.+)/s
@@ -388,10 +388,10 @@ sub note_page {
 
 sub dele_data {
   # 仮
-  my %in;
+  my $in;
   
   # 入力チェック
-  if ($in{num} eq '' or $in{pwd} eq '') {
+  if ($in->{num} eq '' or $in->{pwd} eq '') {
     error("削除Noまたは削除キーが入力モレです");
   }
 
@@ -401,7 +401,7 @@ sub dele_data {
   while (<DAT>) {
     my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
 
-    if ($in{num} == $no) {
+    if ($in->{num} == $no) {
       $flg++;
       $crypt = $pw;
       next;
@@ -415,7 +415,7 @@ sub dele_data {
   }
 
   # 削除キーを照合
-  if (decrypt($in{pwd},$crypt) != 1) {
+  if (decrypt($in->{pwd},$crypt) != 1) {
     close(DAT);
     error("認証できません");
   }
@@ -452,16 +452,16 @@ sub error {
 
 sub mail_to {
   # 仮
-  my %in;
+  my $in;
   
   my ($date,$host) = @_;
 
   # 件名をMIMEエンコード
   if ($config->{chg_code} == 0) { require Jcode; }
-  my $msub = Jcode->new("BBS : $in{sub}",'sjis')->mime_encode;
+  my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
 
   # コメント内の改行復元
-  my $com = $in{comment};
+  my $com = $in->{comment};
   $com =~ s/<br>/\n/g;
   $com =~ s/&lt;/>/g;
   $com =~ s/&gt;/</g;
@@ -476,10 +476,10 @@ sub mail_to {
 投稿日：$date
 ホスト：$host
 
-件名  ：$in{sub}
-お名前：$in{name}
-E-mail：$in{email}
-URL   ：$in{url}
+件名  ：$in->{sub}
+お名前：$in->{name}
+E-mail：$in->{email}
+URL   ：$in->{url}
 
 $com
 EOM
@@ -488,18 +488,18 @@ EOM
   $mbody = Jcode->new($mbody,'sjis')->jis;
 
   # メールアドレスがない場合は管理者メールに置き換え
-  $in{email} ||= $config->{mailto};
+  $in->{email} ||= $config->{mailto};
 
   # sendmailコマンド
   my $scmd = "$config->{sendmail} -t -i";
   if ($config->{sendm_f}) {
-    $scmd .= " -f $in{email}";
+    $scmd .= " -f $in->{email}";
   }
 
   # 送信
   open(MAIL,"| $scmd") or error("送信失敗");
   print MAIL "To: $config->{mailto}\n";
-  print MAIL "From: $in{email}\n";
+  print MAIL "From: $in->{email}\n";
   print MAIL "Subject: $msub\n";
   print MAIL "MIME-Version: 1.0\n";
   print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
@@ -546,11 +546,11 @@ sub autolink {
 
 sub no_wd {
   # 仮
-  my %in;
+  my $in;
   
   my $flg;
   foreach ( split(/,/,$config->{no_wd}) ) {
-    if (index("$in{name} $in{sub} $in{comment}", $_) >= 0) {
+    if (index("$in->{name} $in->{sub} $in->{comment}", $_) >= 0) {
       $flg = 1;
       last;
     }
@@ -563,9 +563,9 @@ sub no_wd {
 
 sub jp_wd {
   # 仮
-  my %in;
+  my $in;
   
-  if ($in{comment} !~ /[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]/) {
+  if ($in->{comment} !~ /[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]/) {
     error("メッセージに日本語が含まれていません");
   }
 }
@@ -575,9 +575,9 @@ sub jp_wd {
 
 sub urlnum {
   # 仮
-  my %in;
+  my $in;
   
-  my $com = $in{comment};
+  my $com = $in->{comment};
   my ($num) = ($com =~ s|(https?://)|$1|ig);
   if ($num > $config->{urlnum}) {
     error("コメント中のURLアドレスは最大$config->{urlnum}個までです");
@@ -770,7 +770,7 @@ get '/admin' => sub {
   my $self = shift;
 
 # データ受理
-my %in = parse_form();
+my $in = $self->req->params->to_hash;
 
 # 認証
 check_passwd();
@@ -783,14 +783,14 @@ admin_mode();
 
 sub admin_mode {
   # 仮
-  my %in;
+  my $in;
   
   # 削除処理
-  if ($in{job_dele} && $in{no}) {
+  if ($in->{job_dele} && $in->{no}) {
 
     # 削除情報
     my %del;
-    foreach ( split(/\0/,$in{no}) ) {
+    foreach ( split(/\0/,$in->{no}) ) {
       $del{$_}++;
     }
 
@@ -813,14 +813,14 @@ sub admin_mode {
     close(DAT);
 
   # 修正画面
-  } elsif ($in{job_edit} && $in{no}) {
+  } elsif ($in->{job_edit} && $in->{no}) {
 
     my $log;
     open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
     while (<IN>) {
       my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
 
-      if ($in{no} == $no) {
+      if ($in->{no} == $no) {
         $log = $_;
         last;
       }
@@ -831,18 +831,18 @@ sub admin_mode {
     edit_form($log);
 
   # 修正実行
-  } elsif ($in{job} eq "edit") {
+  } elsif ($in->{job} eq "edit") {
 
     # 未入力の場合
-    if ($in{url} eq "http://") { $in{url} = ""; }
-    $in{sub} ||= "無題";
+    if ($in->{url} eq "http://") { $in->{url} = ""; }
+    $in->{sub} ||= "無題";
 
     # コード変換
     if ($config->{chg_code} == 1) {
       require Jcode;
-      $in{name} = Jcode->new($in{name})->sjis;
-      $in{sub}  = Jcode->new($in{sub})->sjis;
-      $in{comment} = Jcode->new($in{comment})->sjis;
+      $in->{name} = Jcode->new($in->{name})->sjis;
+      $in->{sub}  = Jcode->new($in->{sub})->sjis;
+      $in->{comment} = Jcode->new($in->{comment})->sjis;
     }
 
     # 読み出し
@@ -852,8 +852,8 @@ sub admin_mode {
     while (<DAT>) {
       my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pwd,$tim) = split(/<>/);
 
-      if ($in{no} == $no) {
-        $_ = "$no<>$dat<>$in{name}<>$in{email}<>$in{sub}<>$in{comment}<>$in{url}<>$hos<>$pwd<>$tim<>\n";
+      if ($in->{no} == $no) {
+        $_ = "$no<>$dat<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$hos<>$pwd<>$tim<>\n";
       }
       push(@data,$_);
     }
@@ -870,7 +870,7 @@ sub admin_mode {
 
   # ページ数
   my $page = 0;
-  foreach ( keys %in ) {
+  foreach ( keys $in ) {
     if (/^page:(\d+)/) {
       $page = $1;
       last;
@@ -891,7 +891,7 @@ sub admin_mode {
 <div class="ttl">■ 管理モード</div>
 <form action="$config->{admin_cgi}" method="post">
 <input type="hidden" name="mode" value="admin">
-<input type="hidden" name="pass" value="$in{pass}">
+<input type="hidden" name="pass" value="$in->{pass}">
 <div class="btn">
 <input type="submit" name="job_edit" value="修正">
 <input type="submit" name="job_dele" value="削除">
@@ -940,7 +940,7 @@ EOM
 
 sub edit_form {
   # 仮
-  my %in;
+  my $in;
   
   my $log = shift;
   my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/,$log);
@@ -953,7 +953,7 @@ sub edit_form {
 <div align="right">
 <form action="$config->{admin_cgi}" method="post">
 <input type="hidden" name="mode" value="admin">
-<input type="hidden" name="pass" value="$in{pass}">
+<input type="hidden" name="pass" value="$in->{pass}">
 <input type="submit" value="&lt; 前画面">
 </form>
 </div>
@@ -965,7 +965,7 @@ sub edit_form {
 <input type="hidden" name="mode" value="admin">
 <input type="hidden" name="job" value="edit">
 <input type="hidden" name="no" value="$no">
-<input type="hidden" name="pass" value="$in{pass}">
+<input type="hidden" name="pass" value="$in->{pass}">
 <table class="form-tbl">
 <tr>
   <th>おなまえ</th>
@@ -1033,14 +1033,14 @@ EOM
 
 sub check_passwd {
   # 仮
-  my %in;
+  my $in;
   
   # パスワードが未入力の場合は入力フォーム画面
-  if ($in{pass} eq "") {
+  if ($in->{pass} eq "") {
     enter_form();
 
   # パスワード認証
-  } elsif ($in{pass} ne $config->{password}) {
+  } elsif ($in->{pass} ne $config->{password}) {
     error("認証できません");
   }
 }
@@ -1106,7 +1106,7 @@ sub message_ {
   my $msg = shift;
   
   # 仮
-  my %in;
+  my $in;
 
   header("完了");
   print <<EOM;
@@ -1115,7 +1115,7 @@ sub message_ {
 <p class="msg">$msg</p>
 <hr width="350">
 <form action="$config->{admin_cgi}" method="post">
-<input type="hidden" name="pass" value="$in{pass}">
+<input type="hidden" name="pass" value="$in->{pass}">
 <input type="submit" value="管理画面に戻る">
 </form>
 </div>
