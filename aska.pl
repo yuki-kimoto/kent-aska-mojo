@@ -10,183 +10,212 @@ my $config = app->config;
 get '/' => sub {
   my $self = shift;
 
-  # データ受理
-  my $in = $self->req->params->to_hash;
+  # パラメーター
+  my $in = {};
+  $in->{mode} = $self->param('mode');
 
-  # 記事投稿
-  if ($in->{mode} eq 'regist') {
-  
-    # 投稿チェック
-    if ($config->{postonly} && $ENV{REQUEST_METHOD} ne 'POST') {
-      error("不正なリクエストです");
-    }
 
-    # 不要改行カット
-    $in->{sub}  =~ s|<br />||g;
-    $in->{name} =~ s|<br />||g;
-    $in->{pwd}  =~ s|<br />||g;
-    $in->{captcha} =~ s|<br />||g;
-    $in->{comment} =~ s|(<br />)+$||g;
+  if (lc $self->req->method eq 'post') {
+    # 記事投稿
+    if ($in->{mode} eq 'regist') {
 
-    # チェック
-    if ($config->{no_wd}) { no_wd($in); }
-    if ($config->{jp_wd}) { jp_wd($in); }
-    if ($config->{urlnum} > 0) { urlnum($in); }
+      $in->{sub} = $self->param('sub');
+      $in->{name} = $self->param('name');
+      $in->{pwd} = $self->param('pwd');
+      $in->{captcha} = $self->param('captcha');
+      $in->{comment} = $self->param('comment');
+      $in->{str_crypt} = $self->param('str_crypt');
 
-    # 画像認証チェック
-    if ($config->{use_captcha} > 0) {
-      require $config->{captcha_pl};
-      if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
-        error("画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください");
+      # 不要改行カット
+      $in->{sub}  =~ s|<br />||g;
+      $in->{name} =~ s|<br />||g;
+      $in->{pwd}  =~ s|<br />||g;
+      $in->{captcha} =~ s|<br />||g;
+      $in->{comment} =~ s|(<br />)+$||g;
+
+      #  禁止ワードチェック
+      if ($config->{no_wd}) {
+        my $flg;
+        foreach ( split(/,/,$config->{no_wd}) ) {
+          if (index("$in->{name} $in->{sub} $in->{comment}", $_) >= 0) {
+            $flg = 1;
+            last;
+          }
+        }
+        if ($flg) { error("禁止ワードが含まれています"); }
       }
 
-      # 投稿キーチェック
-      # -1 : キー不一致
-      #  0 : 制限時間オーバー
-      #  1 : キー一致
-      my $chk = cap::check($in->{captcha},$in->{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
-      if ($chk == 0) {
-        error("画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください");
-      } elsif ($chk == -1) {
-        error("画像認証が不正です。<br />投稿フォームに戻って再読込み後再入力してください");
+      # 日本語チェック
+      if ($config->{jp_wd}) {
+        if ($in->{comment} !~ /[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]/) {
+          error("メッセージに日本語が含まれていません");
+        }
       }
-    }
 
-    # 未入力の場合
-    if ($in->{url} eq "http://") { $in->{url} = ""; }
-    $in->{sub} ||= '無題';
-
-    # フォーム内容をチェック
-    my $err;
-    if ($in->{name} eq "") { $err .= "名前が入力されていません<br />"; }
-    if ($in->{comment} eq "") { $err .= "コメントが入力されていません<br />"; }
-    if ($in->{email} ne '' && $in->{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
-      $err .= "Ｅメールの入力内容が不正です<br />";
-    }
-    if ($in->{url} ne '' && $in->{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
-      $err .= "参照先URLの入力内容が不正です<br />";
-    }
-    if ($err) { error($err); }
-
-    # コード変換
-    if ($config->{chg_code} == 1) {
-      require Jcode;
-      $in->{name} = Jcode->new($in->{name})->sjis;
-      $in->{sub}  = Jcode->new($in->{sub})->sjis;
-      $in->{comment} = Jcode->new($in->{comment})->sjis;
-    }
-
-    # ホスト取得
-    my ($host,$addr) = get_host();
-
-    # 削除キー暗号化
-    my $pwd = encrypt($in->{pwd}) if ($in->{pwd} ne "");
-
-    # 時間取得
-    my $time = time;
-    my ($min,$hour,$mday,$mon,$year,$wday) = (localtime($time))[1..6];
-    my @wk = ('Sun','Mon','Tue','Wed','Thu','Fri','Sat');
-    my $date = sprintf("%04d/%02d/%02d(%s) %02d:%02d",
-          $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
-
-    # 先頭記事読み取り
-    open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
-    eval "flock(DAT, 2);";
-    my $top = <DAT>;
-
-    # 重複投稿チェック
-    my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/,$top);
-    if ($in->{name} eq $nam && $in->{comment} eq $com) {
-      close(DAT);
-      error("二重投稿は禁止です");
-    }
-
-    # 連続投稿チェック
-    my $flg;
-    if ($config->{regCtl} == 1) {
-      if ($host eq $hos && $time - $tim < $config->{wait}) { $flg = 1; }
-    } elsif ($config->{regCtl} == 2) {
-      if ($time - $tim < $config->{wait}) { $flg = 1; }
-    }
-    if ($flg) {
-      close(DAT);
-      error("現在投稿制限中です。もうしばらくたってから投稿をお願いします");
-    }
-
-    # 記事No採番
-    $no++;
-
-    # 記事数調整
-    my @data = ($top);
-    my $i = 0;
-    while (<DAT>) {
-      $i++;
-      push(@data,$_);
-
-      last if ($i >= $config->{maxlog}-1);
-    }
-
-    # 更新
-    seek(DAT, 0, 0);
-    print DAT "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
-    print DAT @data;
-    truncate(DAT, tell(DAT));
-    close(DAT);
-
-    # クッキー格納
-    set_cookie($in->{name},$in->{email},$in->{url}) if ($in->{cookie} == 1);
-
-    # メール通知
-    mail_to($in, $date,$host) if ($config->{mailing} == 1);
-
-    # 完了画面
-    message("ありがとうございます。記事を受理しました。");
-  }
-  
-  # ユーザー記事削除
-  if ($in->{mode} eq 'dele') {
-    # 入力チェック
-    if ($in->{num} eq '' or $in->{pwd} eq '') {
-      error("削除Noまたは削除キーが入力モレです");
-    }
-
-    my ($flg,$crypt,@log);
-    open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
-    eval "flock(DAT, 2);";
-    while (<DAT>) {
-      my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
-
-      if ($in->{num} == $no) {
-        $flg++;
-        $crypt = $pw;
-        next;
+      #  URL個数チェック
+      if ($config->{urlnum} > 0) {
+        my $com = $in->{comment};
+        my ($num) = ($com =~ s|(https?://)|$1|ig);
+        if ($num > $config->{urlnum}) {
+          error("コメント中のURLアドレスは最大$config->{urlnum}個までです");
+        }
       }
-      push(@log,$_);
-    }
 
-    if (!$flg or !$crypt) {
+      # 画像認証チェック
+      if ($config->{use_captcha} > 0) {
+        require $config->{captcha_pl};
+        if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
+          error("画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください");
+        }
+
+        # 投稿キーチェック
+        # -1 : キー不一致
+        #  0 : 制限時間オーバー
+        #  1 : キー一致
+        my $chk = cap::check($in->{captcha},$in->{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
+        if ($chk == 0) {
+          error("画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください");
+        } elsif ($chk == -1) {
+          error("画像認証が不正です。<br />投稿フォームに戻って再読込み後再入力してください");
+        }
+      }
+
+      # 未入力の場合
+      if ($in->{url} eq "http://") { $in->{url} = ""; }
+      $in->{sub} ||= '無題';
+
+      # フォーム内容をチェック
+      my $err;
+      if ($in->{name} eq "") { $err .= "名前が入力されていません<br />"; }
+      if ($in->{comment} eq "") { $err .= "コメントが入力されていません<br />"; }
+      if ($in->{email} ne '' && $in->{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
+        $err .= "Ｅメールの入力内容が不正です<br />";
+      }
+      if ($in->{url} ne '' && $in->{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
+        $err .= "参照先URLの入力内容が不正です<br />";
+      }
+      if ($err) { error($err); }
+      
+      # ホスト取得
+      my ($host, $addr) = get_host();
+      
+      # 削除キー暗号化
+      my $pwd = encrypt($in->{pwd}) if ($in->{pwd} ne "");
+      
+      # 時間取得
+      my $time = time;
+      my ($min,$hour,$mday,$mon,$year,$wday) = (localtime($time))[1..6];
+      my @wk = ('Sun','Mon','Tue','Wed','Thu','Fri','Sat');
+      my $date = sprintf("%04d/%02d/%02d(%s) %02d:%02d",
+            $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
+      
+      # 先頭記事読み取り
+      open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
+      eval "flock(DAT, 2);";
+      my $top = <DAT>;
+      
+      # 重複投稿チェック
+      my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/,$top);
+      if ($in->{name} eq $nam && $in->{comment} eq $com) {
+        close(DAT);
+        error("二重投稿は禁止です");
+      }
+
+      # 連続投稿チェック
+      my $flg;
+      if ($config->{regCtl} == 1) {
+        if ($host eq $hos && $time - $tim < $config->{wait}) { $flg = 1; }
+      } elsif ($config->{regCtl} == 2) {
+        if ($time - $tim < $config->{wait}) { $flg = 1; }
+      }
+      if ($flg) {
+        close(DAT);
+        error("現在投稿制限中です。もうしばらくたってから投稿をお願いします");
+      }
+
+      # 記事No採番
+      $no++;
+
+      # 記事数調整
+      my @data = ($top);
+      my $i = 0;
+      while (<DAT>) {
+        $i++;
+        push(@data,$_);
+
+        last if ($i >= $config->{maxlog}-1);
+      }
+
+      # 更新
+      seek(DAT, 0, 0);
+      print DAT "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
+      print DAT @data;
+      truncate(DAT, tell(DAT));
       close(DAT);
-      error("削除キーが設定されていないか又は記事が見当たりません");
-    }
 
-    # 削除キーを照合
-    if (decrypt($in->{pwd},$crypt) != 1) {
+      # クッキー格納
+      $self->session(name => $in->{name});
+      $self->session(email => $in->{email});
+      $self->session(url => $in->{url});
+
+      # メール通知
+      mail_to($in, $date,$host) if ($config->{mailing} == 1);
+
+      # 完了画面
+      message("ありがとうございます。記事を受理しました。");
+    }
+    
+    # ユーザー記事削除
+    if ($in->{mode} eq 'dele') {
+      $in->{num} = $self->param('in');
+      $in->{pwd} = $self->param('pwd');
+    
+      # 入力チェック
+      if ($in->{num} eq '' or $in->{pwd} eq '') {
+        error("削除Noまたは削除キーが入力モレです");
+      }
+
+      my ($flg,$crypt,@log);
+      open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
+      eval "flock(DAT, 2);";
+      while (<DAT>) {
+        my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
+
+        if ($in->{num} == $no) {
+          $flg++;
+          $crypt = $pw;
+          next;
+        }
+        push(@log,$_);
+      }
+
+      if (!$flg or !$crypt) {
+        close(DAT);
+        error("削除キーが設定されていないか又は記事が見当たりません");
+      }
+
+      # 削除キーを照合
+      if (decrypt($in->{pwd},$crypt) != 1) {
+        close(DAT);
+        error("認証できません");
+      }
+
+      # ログ更新
+      seek(DAT, 0, 0);
+      print DAT @log;
+      truncate(DAT, tell(DAT));
       close(DAT);
-      error("認証できません");
+
+      # 完了
+      message("記事を削除しました");
     }
-
-    # ログ更新
-    seek(DAT, 0, 0);
-    print DAT @log;
-    truncate(DAT, tell(DAT));
-    close(DAT);
-
-    # 完了
-    message("記事を削除しました");
   }
   
   # ワード検索
   if ($in->{mode} eq 'find') {
+    $in->{cond} = $self->param('cond');
+    $in->{word} = $self->param('word');
+    
     # 条件
     $in->{cond} =~ s/\D//g;
     $in->{word} =~ s|<br />||g;
@@ -258,6 +287,8 @@ get '/' => sub {
   
   #  記事表示
   # レス処理
+  $in->{res} = $self->param('res');
+  
   $in->{res} =~ s/\D//g;
   my %res;
   if ($in->{res}) {
@@ -302,8 +333,11 @@ get '/' => sub {
   my $page_btn = make_pager($i,$pg);
 
   # クッキー取得
-  my @cook = get_cookie();
-  $cook[2] ||= 'http://';
+  my $cookie_name = $self->session('name');
+  my $cookie_email = $self->session('email');
+  my $cookie_url = $self->session('url');
+  
+  $cookie_url ||= 'http://';
 
   # テンプレート読込
   open(IN,"$config->{tmpldir}/bbs.html") or error("open err: bbs.html");
@@ -314,9 +348,9 @@ get '/' => sub {
   $tmpl =~ s/!([a-z]+_cgi)!/$config->{$1}/g;
   $tmpl =~ s/!homepage!/$config->{homepage}/g;
   $tmpl =~ s/<!-- page_btn -->/$page_btn/g;
-  $tmpl =~ s/!name!/$cook[0]/;
-  $tmpl =~ s/!email!/$cook[1]/;
-  $tmpl =~ s/!url!/$cook[2]/;
+  $tmpl =~ s/!name!/$cookie_name/;
+  $tmpl =~ s/!email!/$cookie_email/;
+  $tmpl =~ s/!url!/$cookie_url/;
   $tmpl =~ s/!sub!/$res{sub}/;
   $tmpl =~ s/!comment!/$res{com}/;
   $tmpl =~ s/!bbs_title!/$config->{bbs_title}/g;
@@ -365,8 +399,13 @@ get '/admin' => sub {
   my $self = shift;
 
   # データ受理
-  my $in = $self->req->params->to_hash;
-
+  my $in = {};
+  $in->{pass} = $self->param('in');
+  $in->{job_edit} = $self->param('job_edit');
+  $in->{job_dele} = $self->param('job_dele');
+  $in->{job} = $self->param('job');
+  $in->{no} = $self->param('no');
+  
   # パスワードが未入力の場合は入力フォーム画面
   if ($in->{pass} eq "") {
     header("入室画面");
@@ -495,18 +534,15 @@ EOM
     }
   # 修正実行
   } elsif ($in->{job} eq "edit") {
-
+    $in->{url} = $self->param('url');
+    $in->{name} = $self->param('name');
+    $in->{sub}  = $self->param('sub');
+    $in->{comment} = $self->param('comment');
+    $in->{email} = $self->param('email');
+    
     # 未入力の場合
     if ($in->{url} eq "http://") { $in->{url} = ""; }
     $in->{sub} ||= "無題";
-
-    # コード変換
-    if ($config->{chg_code} == 1) {
-      require Jcode;
-      $in->{name} = Jcode->new($in->{name})->sjis;
-      $in->{sub}  = Jcode->new($in->{sub})->sjis;
-      $in->{comment} = Jcode->new($in->{comment})->sjis;
-    }
 
     # 読み出し
     my @data;
@@ -775,41 +811,6 @@ sub autolink {
   return $text;
 }
 
-#  禁止ワードチェック
-sub no_wd {
-  my $in = shift;
-  
-  my $flg;
-  foreach ( split(/,/,$config->{no_wd}) ) {
-    if (index("$in->{name} $in->{sub} $in->{comment}", $_) >= 0) {
-      $flg = 1;
-      last;
-    }
-  }
-  if ($flg) { error("禁止ワードが含まれています"); }
-}
-
-#  日本語チェック
-sub jp_wd {
-  my $in = shift;
-  
-  if ($in->{comment} !~ /[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]/) {
-    error("メッセージに日本語が含まれていません");
-  }
-}
-
-#  URL個数チェック
-sub urlnum {
-  # 仮
-  my $in;
-  
-  my $com = $in->{comment};
-  my ($num) = ($com =~ s|(https?://)|$1|ig);
-  if ($num > $config->{urlnum}) {
-    error("コメント中のURLアドレスは最大$config->{urlnum}個までです");
-  }
-}
-
 #  アクセス制限
 sub get_host {
   # IP&ホスト取得
@@ -930,53 +931,6 @@ sub make_pager {
   return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
 }
 
-
-#  クッキー発行
-sub set_cookie {
-  my @data = @_;
-
-  # 60日間有効
-  my ($sec,$min,$hour,$mday,$mon,$year,$wday,undef,undef) = gmtime(time + 60*24*60*60);
-  my @mon  = qw|Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec|;
-  my @week = qw|Sun Mon Tue Wed Thu Fri Sat|;
-
-  # 時刻フォーマット
-  my $gmt = sprintf("%s, %02d-%s-%04d %02d:%02d:%02d GMT",
-        $week[$wday],$mday,$mon[$mon],$year+1900,$hour,$min,$sec);
-
-  # URLエンコード
-  my $cook;
-  foreach (@data) {
-    s/(\W)/sprintf("%%%02X", unpack("C", $1))/eg;
-    $cook .= "$_<>";
-  }
-
-  print "Set-Cookie: $config->{cookie_id}=$cook; expires=$gmt\n";
-}
-
-#  クッキー取得
-sub get_cookie {
-  # クッキー取得
-  my $cook = $ENV{HTTP_COOKIE};
-
-  # 該当IDを取り出す
-  my %cook;
-  foreach ( split(/;/,$cook) ) {
-    my ($key,$val) = split(/=/);
-    $key =~ s/\s//g;
-    $cook{$key} = $val;
-  }
-
-  # URLデコード
-  my @cook;
-  foreach ( split(/<>/,$cook{$config->{cookie_id}}) ) {
-    s/%([0-9A-Fa-f][0-9A-Fa-f])/pack("H2", $1)/eg;
-    s/[&"'<>]//g;
-
-    push(@cook,$_);
-  }
-  return @cook;
-}
 
 #  認証画像作成 [ライブラリ版]
 sub load_pngren {
