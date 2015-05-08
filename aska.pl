@@ -5,12 +5,21 @@ use lib "$FindBin::Bin/extlib/lib/perl5";
 use Mojolicious::Lite;
 use Crypt::RC4;
 
+# コンフィグの読み込み
 plugin 'Config';
-
 my $config = app->config;
 
-get '/note';
+# テストページ
 get '/test';
+
+# 留意事項
+get '/note';
+
+# ワード検索
+get '/find';
+
+# 管理者
+get '/admin';
 
 get '/' => sub {
   my $self = shift;
