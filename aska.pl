@@ -5,7 +5,6 @@ my $lib_path;
 BEGIN { $lib_path = "$FindBin::Bin/extlib/lib/perl5" }
 use lib $lib_path;
 use Mojolicious::Lite;
-use Crypt::RC4;
 use Carp 'croak';
 
 # コンフィグの読み込み
@@ -123,10 +122,10 @@ any '/' => sub {
       }
       
       # ホスト取得
-      my ($host, $addr) = get_host();
+      my ($host, $addr) = Aska::Util::get_host();
       
       # 削除キー暗号化
-      my $pwd = encrypt($in->{pwd}) if ($in->{pwd} ne "");
+      my $pwd = Aska::Util::encrypt($in->{pwd}) if ($in->{pwd} ne "");
       
       # 時間取得
       my $time = time;
@@ -234,7 +233,7 @@ any '/' => sub {
       }
 
       # 削除キーを照合
-      if (decrypt($in->{pwd},$crypt) != 1) {
+      if (Aska::Util::decrypt($in->{pwd},$crypt) != 1) {
         close($dat_fh);
         error("認証できません");
       }
@@ -354,13 +353,13 @@ any '/' => sub {
   close($in_fh);
 
   # 繰越ボタン作成
-  my $page_btn = make_pager($i,$pg);
+  my $page_btn = Aska::Util::make_pager($i,$pg);
 
   # ループ部
   foreach (@log) {
     my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
     $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
-    $com = autolink($com) if ($config->{autolink});
+    $com = Aska::Util::autolink($com) if ($config->{autolink});
     $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
     $com .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
 
@@ -631,7 +630,7 @@ get '/captcha' => sub {
   }
 
   # 復号
-  my $plain = decrypt_($config->{cap_len}, $buf);
+  my $plain = Aska::Util::decrypt_($config->{cap_len}, $buf);
 
   # 認証画像作成
   my $img_bin;
@@ -643,11 +642,11 @@ get '/captcha' => sub {
     if ($config->{use_captcha} == 2) {
       require $config->{captsec_pl};
       my $font_ttl_path = $self->app->home->rel_file("/public/images/$config->{font_ttl}");
-      load_capsec($plain, "$font_ttl_path");
+      Aska::Util::load_capsec($plain, "$font_ttl_path");
     }
     else {
       my $si_png_path = $self->app->home->rel_file("/public/images/$config->{si_png}");
-      my $ret = load_pngren($plain, "$si_png_path");
+      Aska::Util::load_pngren($plain, "$si_png_path");
     }
   }
   
@@ -709,272 +708,279 @@ EOM
 
 };
 
-app->start;
+{
+  package Aska::Util;
+  use strict;
+  use warnings;
+  
+  use Crypt::RC4;
+  sub search {
+    my ($word,$cond) = @_;
 
-sub search {
-  my ($word,$cond) = @_;
+    # キーワードを配列化
+    $word =~ s/\x81\x40/ /g;
+    my @wd = split(/\s+/,$word);
 
-  # キーワードを配列化
-  $word =~ s/\x81\x40/ /g;
-  my @wd = split(/\s+/,$word);
+    # キーワード検索準備（Shift-JIS定義）
+    my $ascii = '[\x00-\x7F]';
+    my $hanka = '[\xA1-\xDF]';
+    my $kanji = '[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]';
 
-  # キーワード検索準備（Shift-JIS定義）
-  my $ascii = '[\x00-\x7F]';
-  my $hanka = '[\xA1-\xDF]';
-  my $kanji = '[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]';
+    # 検索処理
+    my @log;
+    open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
+    while (<$in_fh>) {
+      my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
 
-  # 検索処理
-  my @log;
-  open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
-  while (<$in_fh>) {
-    my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
-
-    my $flg;
-    foreach my $wd (@wd) {
-      if ("$nam $eml $sub $com $url" =~ /^(?:$ascii|$hanka|$kanji)*?\Q$wd\E/i) {
-        $flg++;
-        if ($cond == 0) { last; }
-      } else {
-        if ($cond == 1) { $flg = 0; last; }
+      my $flg;
+      foreach my $wd (@wd) {
+        if ("$nam $eml $sub $com $url" =~ /^(?:$ascii|$hanka|$kanji)*?\Q$wd\E/i) {
+          $flg++;
+          if ($cond == 0) { last; }
+        } else {
+          if ($cond == 1) { $flg = 0; last; }
+        }
       }
+      next if (!$flg);
+
+      push(@log,$_);
     }
-    next if (!$flg);
+    close($in_fh);
 
-    push(@log,$_);
+    # 検索結果
+    return @log;
   }
-  close($in_fh);
 
-  # 検索結果
-  return @log;
-}
+  sub mail_to {
 
-sub mail_to {
+    my ($in, $date,$host) = @_;
 
-  my ($in, $date,$host) = @_;
+    # 件名をMIMEエンコード
+    if ($config->{chg_code} == 0) { require Jcode; }
+    my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
 
-  # 件名をMIMEエンコード
-  if ($config->{chg_code} == 0) { require Jcode; }
-  my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
+    # コメント内の改行復元
+    my $com = $in->{comment};
+    $com =~ s/<br>/\n/g;
+    $com =~ s/&lt;/>/g;
+    $com =~ s/&gt;/</g;
+    $com =~ s/&quot;/"/g;
+    $com =~ s/&amp;/&/g;
+    $com =~ s/&#39;/'/g;
 
-  # コメント内の改行復元
-  my $com = $in->{comment};
-  $com =~ s/<br>/\n/g;
-  $com =~ s/&lt;/>/g;
-  $com =~ s/&gt;/</g;
-  $com =~ s/&quot;/"/g;
-  $com =~ s/&amp;/&/g;
-  $com =~ s/&#39;/'/g;
+    # メール本文を定義
+    my $mbody = <<EOM;
+  掲示板に投稿がありました。
 
-  # メール本文を定義
-  my $mbody = <<EOM;
-掲示板に投稿がありました。
+  投稿日：$date
+  ホスト：$host
 
-投稿日：$date
-ホスト：$host
+  件名  ：$in->{sub}
+  お名前：$in->{name}
+  E-mail：$in->{email}
+  URL   ：$in->{url}
 
-件名  ：$in->{sub}
-お名前：$in->{name}
-E-mail：$in->{email}
-URL   ：$in->{url}
-
-$com
+  $com
 EOM
 
-  # JISコード変換
-  $mbody = Jcode->new($mbody,'sjis')->jis;
+    # JISコード変換
+    $mbody = Jcode->new($mbody,'sjis')->jis;
 
-  # メールアドレスがない場合は管理者メールに置き換え
-  $in->{email} ||= $config->{mailto};
+    # メールアドレスがない場合は管理者メールに置き換え
+    $in->{email} ||= $config->{mailto};
 
-  # sendmailコマンド
-  my $scmd = "$config->{sendmail} -t -i";
-  if ($config->{sendm_f}) {
-    $scmd .= " -f $in->{email}";
+    # sendmailコマンド
+    my $scmd = "$config->{sendmail} -t -i";
+    if ($config->{sendm_f}) {
+      $scmd .= " -f $in->{email}";
+    }
+
+    # 送信
+    open(MAIL,"| $scmd") or error("送信失敗");
+    print MAIL "To: $config->{mailto}\n";
+    print MAIL "From: $in->{email}\n";
+    print MAIL "Subject: $msub\n";
+    print MAIL "MIME-Version: 1.0\n";
+    print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
+    print MAIL "Content-Transfer-Encoding: 7bit\n";
+    print MAIL "X-Mailer: $config->{version}\n\n";
+    print MAIL "$mbody\n";
+    close(MAIL);
   }
 
-  # 送信
-  open(MAIL,"| $scmd") or error("送信失敗");
-  print MAIL "To: $config->{mailto}\n";
-  print MAIL "From: $in->{email}\n";
-  print MAIL "Subject: $msub\n";
-  print MAIL "MIME-Version: 1.0\n";
-  print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
-  print MAIL "Content-Transfer-Encoding: 7bit\n";
-  print MAIL "X-Mailer: $config->{version}\n\n";
-  print MAIL "$mbody\n";
-  close(MAIL);
-}
+  #  自動リンク
+  sub autolink {
+    my $text = shift;
 
-#  自動リンク
-sub autolink {
-  my $text = shift;
-
-  $text =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
-  return $text;
-}
-
-#  アクセス制限
-sub get_host {
-  # IP&ホスト取得
-  my $host = $ENV{REMOTE_HOST};
-  my $addr = $ENV{REMOTE_ADDR};
-  if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
-    $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
+    $text =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
+    return $text;
   }
 
-  # IPチェック
-  my $flg;
-  foreach ( split(/\s+/,$config->{deny_addr}) ) {
-    s/\./\\\./g;
-    s/\*/\.\*/g;
+  #  アクセス制限
+  sub get_host {
+    # IP&ホスト取得
+    my $host = $ENV{REMOTE_HOST};
+    my $addr = $ENV{REMOTE_ADDR};
+    if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
+      $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
+    }
 
-    if ($addr =~ /^$_/i) { $flg++; last; }
-  }
-  if ($flg) {
-    error("アクセスを許可されていません");
-
-  # ホストチェック
-  } elsif ($host) {
-
-    foreach ( split(/\s+/,$config->{deny_host}) ) {
+    # IPチェック
+    my $flg;
+    foreach ( split(/\s+/,$config->{deny_addr}) ) {
       s/\./\\\./g;
       s/\*/\.\*/g;
 
-      if ($host =~ /$_$/i) { $flg++; last; }
+      if ($addr =~ /^$_/i) { $flg++; last; }
     }
     if ($flg) {
       error("アクセスを許可されていません");
-    }
-  }
 
-  if ($host eq "") { $host = $addr; }
-  return ($host,$addr);
-}
+    # ホストチェック
+    } elsif ($host) {
 
-#  crypt暗号
-sub encrypt {
-  my $in = shift;
+      foreach ( split(/\s+/,$config->{deny_host}) ) {
+        s/\./\\\./g;
+        s/\*/\.\*/g;
 
-  my @wd = (0 .. 9, 'a'..'z', 'A'..'Z', '.', '/');
-  srand;
-  my $salt = $wd[int(rand(@wd))] . $wd[int(rand(@wd))];
-  crypt($in,$salt) || crypt ($in,'$1$'.$salt);
-}
-
-
-#  crypt照合
-sub decrypt {
-  my ($in,$dec) = @_;
-
-  my $salt = $dec =~ /^\$1\$(.*)\$/ ? $1 : substr($dec,0,2);
-  if (crypt($in,$salt) eq $dec || crypt($in,'$1$'.$salt) eq $dec) {
-    return 1;
-  } else {
-    return 0;
-  }
-}
-
-
-#  完了メッセージ
-sub message {
-  my $msg = shift;
-
-  open(my $in_fh,"$config->{tmpldir}/message.html") or error("open error: message.html");
-  my $tmpl = join('', <$in_fh>);
-  close($in_fh);
-
-  $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
-  $tmpl =~ s/!message!/$msg/g;
-
-  print "Content-type: text/html; charset=shift_jis\n\n";
-  print $tmpl;
-}
-
-#  ページ送り作成
-sub make_pager {
-  my ($i,$pg) = @_;
-
-  # ページ繰越数定義
-  $config->{pg_max} ||= 10;
-  my $next = $pg + $config->{pg_max};
-  my $back = $pg - $config->{pg_max};
-
-  # ページ繰越ボタン作成
-  my @pg;
-  if ($back >= 0 || $next < $i) {
-    my $flg;
-    my ($w,$x,$y,$z) = (0,1,0,$i);
-    while ($z > 0) {
-      if ($pg == $y) {
-        $flg++;
-        push(@pg,qq!<li><span>$x</span></li>\n!);
-      } else {
-        push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
+        if ($host =~ /$_$/i) { $flg++; last; }
       }
-      $x++;
-      $y += $config->{pg_max};
-      $z -= $config->{pg_max};
+      if ($flg) {
+        error("アクセスを許可されていません");
+      }
+    }
 
-      if ($flg) { $w++; }
-      last if ($w >= 5 && @pg >= 10);
+    if ($host eq "") { $host = $addr; }
+    return ($host,$addr);
+  }
+
+  #  crypt暗号
+  sub encrypt {
+    my $in = shift;
+
+    my @wd = (0 .. 9, 'a'..'z', 'A'..'Z', '.', '/');
+    srand;
+    my $salt = $wd[int(rand(@wd))] . $wd[int(rand(@wd))];
+    crypt($in,$salt) || crypt ($in,'$1$'.$salt);
+  }
+
+
+  #  crypt照合
+  sub decrypt {
+    my ($in,$dec) = @_;
+
+    my $salt = $dec =~ /^\$1\$(.*)\$/ ? $1 : substr($dec,0,2);
+    if (crypt($in,$salt) eq $dec || crypt($in,'$1$'.$salt) eq $dec) {
+      return 1;
+    } else {
+      return 0;
     }
   }
-  while( @pg >= 11 ) { shift(@pg); }
-  my $ret = join('', @pg);
-  if ($back >= 0) {
-    $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
+
+
+  #  完了メッセージ
+  sub message {
+    my $msg = shift;
+
+    open(my $in_fh,"$config->{tmpldir}/message.html") or error("open error: message.html");
+    my $tmpl = join('', <$in_fh>);
+    close($in_fh);
+
+    $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
+    $tmpl =~ s/!message!/$msg/g;
+
+    print "Content-type: text/html; charset=shift_jis\n\n";
+    print $tmpl;
   }
-  if ($next < $i) {
-    $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
+
+  #  ページ送り作成
+  sub make_pager {
+    my ($i,$pg) = @_;
+
+    # ページ繰越数定義
+    $config->{pg_max} ||= 10;
+    my $next = $pg + $config->{pg_max};
+    my $back = $pg - $config->{pg_max};
+
+    # ページ繰越ボタン作成
+    my @pg;
+    if ($back >= 0 || $next < $i) {
+      my $flg;
+      my ($w,$x,$y,$z) = (0,1,0,$i);
+      while ($z > 0) {
+        if ($pg == $y) {
+          $flg++;
+          push(@pg,qq!<li><span>$x</span></li>\n!);
+        } else {
+          push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
+        }
+        $x++;
+        $y += $config->{pg_max};
+        $z -= $config->{pg_max};
+
+        if ($flg) { $w++; }
+        last if ($w >= 5 && @pg >= 10);
+      }
+    }
+    while( @pg >= 11 ) { shift(@pg); }
+    my $ret = join('', @pg);
+    if ($back >= 0) {
+      $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
+    }
+    if ($next < $i) {
+      $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
+    }
+    
+    # 結果を返す
+    return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
   }
-  
-  # 結果を返す
-  return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
-}
 
 
-#  認証画像作成 [ライブラリ版]
-sub load_pngren {
-  my ($plain, $sipng) = @_;
+  #  認証画像作成 [ライブラリ版]
+  sub load_pngren {
+    my ($plain, $sipng) = @_;
 
-  # 数字
-  my @img = split(//, $plain);
+    # 数字
+    my @img = split(//, $plain);
 
-  # 表示開始
-  require $config->{pngren_pl};
-  pngren::PngRen($sipng, \@img);
-}
-
-#  復号
-sub decrypt_ {
-  my ($caplen, $buf) = @_;
-
-  # 復号
-  $buf =~ s/N/\n/g;
-  $buf =~ s/([0-9A-Fa-f]{2})/pack('H2', $1)/eg;
-  my $plain = RC4( $config->{captcha_key}, $buf );
-
-  # 先頭の数字を抽出
-  $plain =~ s/^(\d{$caplen}).*/$1/ or &err_img;
-  return $plain;
-}
-
-#  エラー処理
-sub err_img {
-  # エラー画像
-  my @err = qw{
-    47 49 46 38 39 61 2d 00 0f 00 80 00 00 00 00 00 ff ff ff 2c
-    00 00 00 00 2d 00 0f 00 00 02 49 8c 8f a9 cb ed 0f a3 9c 34
-    81 7b 03 ce 7a 23 7c 6c 00 c4 19 5c 76 8e dd ca 96 8c 9b b6
-    63 89 aa ee 22 ca 3a 3d db 6a 03 f3 74 40 ac 55 ee 11 dc f9
-    42 bd 22 f0 a7 34 2d 63 4e 9c 87 c7 93 fe b2 95 ae f7 0b 0e
-    8b c7 de 02 00 3b
-  };
-
-  print "Content-type: image/gif\n\n";
-  foreach (@err) {
-    print pack('C*', hex($_));
+    # 表示開始
+    require $config->{pngren_pl};
+    pngren::PngRen($sipng, \@img);
   }
+
+  #  復号
+  sub decrypt_ {
+    my ($caplen, $buf) = @_;
+
+    # 復号
+    $buf =~ s/N/\n/g;
+    $buf =~ s/([0-9A-Fa-f]{2})/pack('H2', $1)/eg;
+    my $plain = RC4( $config->{captcha_key}, $buf );
+
+    # 先頭の数字を抽出
+    $plain =~ s/^(\d{$caplen}).*/$1/ or &err_img;
+    return $plain;
+  }
+
+  #  エラー処理
+  sub err_img {
+    # エラー画像
+    my @err = qw{
+      47 49 46 38 39 61 2d 00 0f 00 80 00 00 00 00 00 ff ff ff 2c
+      00 00 00 00 2d 00 0f 00 00 02 49 8c 8f a9 cb ed 0f a3 9c 34
+      81 7b 03 ce 7a 23 7c 6c 00 c4 19 5c 76 8e dd ca 96 8c 9b b6
+      63 89 aa ee 22 ca 3a 3d db 6a 03 f3 74 40 ac 55 ee 11 dc f9
+      42 bd 22 f0 a7 34 2d 63 4e 9c 87 c7 93 fe b2 95 ae f7 0b 0e
+      8b c7 de 02 00 3b
+    };
+
+    print "Content-type: image/gif\n\n";
+    foreach (@err) {
+      print pack('C*', hex($_));
+    }
+  }
+
+  sub error { }
 }
 
-sub error { }
+app->start;
