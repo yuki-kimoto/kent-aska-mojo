@@ -1,7 +1,9 @@
 #!/usr/bin/env
 
 use FindBin;
-use lib "$FindBin::Bin/extlib/lib/perl5";
+my $lib_path;
+BEGIN { $lib_path = "$FindBin::Bin/extlib/lib/perl5" }
+use lib $lib_path;
 use Mojolicious::Lite;
 use Crypt::RC4;
 
@@ -21,11 +23,11 @@ get '/find';
 # 管理者
 get '/admin';
 
+# BBS(トップページ )
 get '/' => sub {
   my $self = shift;
-  
-  $self->render(template => 'bbs');
 
+=pod
   # パラメーター
   my $in = {};
   $in->{mode} = $self->param('mode');
@@ -284,24 +286,9 @@ get '/' => sub {
       $tmp =~ s/!comment!/$com/g;
       print $tmp;
     }
-
-    # フッタ
-    footer($foot);
-
   }
 
-  # 留意事項表示
-  if ($in->{mode} eq 'note') {
-    open(IN,"$config->{tmpldir}/note.html") or error("open err: note.html");
-    my $tmpl = join('', <IN>);
-    close(IN);
-
-    print "Content-type: text/html; charset=shift_jis\n\n";
-    print $tmpl;
-  }
-  
   #  記事表示
-  # レス処理
   $in->{res} = $self->param('res');
   
   $in->{res} =~ s/\D//g;
@@ -347,47 +334,6 @@ get '/' => sub {
   # 繰越ボタン作成
   my $page_btn = make_pager($i,$pg);
 
-  # クッキー取得
-  my $cookie_name = $self->session('name');
-  my $cookie_email = $self->session('email');
-  my $cookie_url = $self->session('url');
-  
-  $cookie_url ||= 'http://';
-
-  # テンプレート読込
-  open(IN,"$config->{tmpldir}/bbs.html") or error("open err: bbs.html");
-  my $tmpl = join('', <IN>);
-  close(IN);
-
-  # 文字置換
-  $tmpl =~ s/!([a-z]+_cgi)!/$config->{$1}/g;
-  $tmpl =~ s/!homepage!/$config->{homepage}/g;
-  $tmpl =~ s/<!-- page_btn -->/$page_btn/g;
-  $tmpl =~ s/!name!/$cookie_name/;
-  $tmpl =~ s/!email!/$cookie_email/;
-  $tmpl =~ s/!url!/$cookie_url/;
-  $tmpl =~ s/!sub!/$res{sub}/;
-  $tmpl =~ s/!comment!/$res{com}/;
-  $tmpl =~ s/!bbs_title!/$config->{bbs_title}/g;
-
-  # テンプレート分割
-  my ($head,$loop,$foot) = $tmpl =~ /(.+)<!-- loop_begin -->(.+)<!-- loop_end -->(.+)/s
-      ? ($1,$2,$3) : error("テンプレート不正");
-
-  # 画像認証作成
-  my ($str_plain,$str_crypt);
-  if ($config->{use_captcha} > 0) {
-    require $config->{captcha_pl};
-    ($str_plain,$str_crypt) = cap::make($config->{captcha_key},$config->{cap_len});
-    $head =~ s/!str_crypt!/$str_crypt/g;
-  } else {
-    $head =~ s/<!-- captcha_begin -->.+<!-- captcha_end -->//s;
-  }
-
-  # ヘッダ表示
-  print "Content-type: text/html; charset=shift_jis\n\n";
-  print $head;
-
   # ループ部
   foreach (@log) {
     my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
@@ -396,7 +342,7 @@ get '/' => sub {
     $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
     $com .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
 
-    my $tmp = $loop;
+    my $tmp = 'bbs body'; # 一時書き換え
     $tmp =~ s/!num!/$no/g;
     $tmp =~ s/!sub!/$sub/g;
     $tmp =~ s/!name!/$name/g;
@@ -406,8 +352,9 @@ get '/' => sub {
     print $tmp;
   }
 
-  # フッタ
-  footer($foot);
+=cut
+
+  $self->render(template => 'bbs');
 };
 
 get '/admin' => sub {
@@ -653,20 +600,38 @@ get '/captcha' => sub {
   my $self = shift;
 
   # パラメータ受け取り
-  my $buf = $ENV{QUERY_STRING};
+  my $buf = $self->param('crypt');
   $buf =~ s/[<>&"'\s]//g;
-  &error if (!$buf);
+  
+  if (!$buf) {
+    $self->reply->exception('Error');
+    return;
+  }
 
   # 復号
-  my $plain = &decrypt($config->{cap_len});
+  my $plain = decrypt_($config->{cap_len}, $buf);
 
   # 認証画像作成
-  if ($config->{use_captcha} == 2) {
-    require $config->{captsec_pl};
-    &load_capsec($plain, "$config->{bin_dir}/$config->{font_ttl}");
-  } else {
-    &load_pngren($plain, "$config->{bin_dir}/$config->{si_png}");
+  my $img_bin;
+  
+  # 標準出力をキャプチャ
+  {
+    open my $fh, '>', \$img_bin;
+    local *STDOUT = $fh;
+    if ($config->{use_captcha} == 2) {
+      require $config->{captsec_pl};
+      my $font_ttl_path = $self->app->home->rel_file("/public/images/$config->{font_ttl}");
+      load_capsec($plain, "$font_ttl_path");
+    }
+    else {
+      my $si_png_path = $self->app->home->rel_file("/public/images/$config->{si_png}");
+      my $ret = load_pngren($plain, "$si_png_path");
+    }
   }
+  
+  $img_bin =~ s#Content-type: image/png\s+##;
+  $self->res->headers->content_type('image/png');
+  $self->render(data => $img_bin);
 };
 
 get '/check' => sub {
@@ -955,15 +920,12 @@ sub load_pngren {
 
   # 表示開始
   require $config->{pngren_pl};
-  &pngren::PngRen($sipng, \@img);
+  pngren::PngRen($sipng, \@img);
 }
 
 #  復号
 sub decrypt_ {
-  my $caplen = shift;
-  
-  # 仮
-  my $buf;
+  my ($caplen, $buf) = @_;
 
   # 復号
   $buf =~ s/N/\n/g;
@@ -994,4 +956,3 @@ sub err_img {
 }
 
 sub error { }
-sub footer { }
