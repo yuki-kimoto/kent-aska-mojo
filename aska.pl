@@ -6,12 +6,152 @@ BEGIN { $lib_path = "$FindBin::Bin/extlib/lib/perl5" }
 use lib $lib_path;
 use Mojolicious::Lite;
 use Carp 'croak';
+use Crypt::RC4;
 
 # コンフィグの読み込み
 plugin 'Config';
 my $config = app->config;
 
 my $logfile_abs = app->home->rel_file($config->{logfile});
+
+# ヘルパー定義
+# 自動リンク
+app->helper('aska.autolink' => sub {
+  my ($self, $text) = @_;
+
+  $text =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
+  return $text;
+});
+
+#  アクセス制限
+app->helper('aska.get_host' => sub {
+  my $self = shift;
+  
+  # IP&ホスト取得
+  my $host = $ENV{REMOTE_HOST};
+  my $addr = $ENV{REMOTE_ADDR};
+  if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
+    $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
+  }
+
+  # IPチェック
+  my $flg;
+  foreach ( split(/\s+/,$config->{deny_addr}) ) {
+    s/\./\\\./g;
+    s/\*/\.\*/g;
+
+    if ($addr =~ /^$_/i) { $flg++; last; }
+  }
+  if ($flg) {
+    error("アクセスを許可されていません");
+
+  # ホストチェック
+  } elsif ($host) {
+
+    foreach ( split(/\s+/,$config->{deny_host}) ) {
+      s/\./\\\./g;
+      s/\*/\.\*/g;
+
+      if ($host =~ /$_$/i) { $flg++; last; }
+    }
+    if ($flg) {
+      error("アクセスを許可されていません");
+    }
+  }
+
+  if ($host eq "") { $host = $addr; }
+  return ($host,$addr);
+});
+
+#  crypt暗号
+app->helper('aska.encrypt' => sub {
+  my ($self, $in) = @_;
+
+  my @wd = (0 .. 9, 'a'..'z', 'A'..'Z', '.', '/');
+  srand;
+  my $salt = $wd[int(rand(@wd))] . $wd[int(rand(@wd))];
+  crypt($in,$salt) || crypt ($in,'$1$'.$salt);
+});
+
+# crypt照合
+app->helper('aska.decrypt' => sub {
+  my ($self, $in, $dec) = @_;
+
+  my $salt = $dec =~ /^\$1\$(.*)\$/ ? $1 : substr($dec,0,2);
+  if (crypt($in,$salt) eq $dec || crypt($in,'$1$'.$salt) eq $dec) {
+    return 1;
+  } else {
+    return 0;
+  }
+});
+
+# ページ送り作成
+app->helper('aska.make_pager' => sub {
+  my ($self, $i,$pg) = @_;
+
+  # ページ繰越数定義
+  $config->{pg_max} ||= 10;
+  my $next = $pg + $config->{pg_max};
+  my $back = $pg - $config->{pg_max};
+
+  # ページ繰越ボタン作成
+  my @pg;
+  if ($back >= 0 || $next < $i) {
+    my $flg;
+    my ($w,$x,$y,$z) = (0,1,0,$i);
+    while ($z > 0) {
+      if ($pg == $y) {
+        $flg++;
+        push(@pg,qq!<li><span>$x</span></li>\n!);
+      } else {
+        push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
+      }
+      $x++;
+      $y += $config->{pg_max};
+      $z -= $config->{pg_max};
+
+      if ($flg) { $w++; }
+      last if ($w >= 5 && @pg >= 10);
+    }
+  }
+  while( @pg >= 11 ) { shift(@pg); }
+  my $ret = join('', @pg);
+  if ($back >= 0) {
+    $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
+  }
+  if ($next < $i) {
+    $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
+  }
+  
+  # 結果を返す
+  return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
+});
+
+#  認証画像作成 [ライブラリ版]
+app->helper('aska.load_pngren' => sub {
+  my ($self, $plain, $sipng) = @_;
+
+  # 数字
+  my @img = split(//, $plain);
+
+  # 表示開始
+  require $config->{pngren_pl};
+  pngren::PngRen($sipng, \@img);
+});
+
+#  復号
+app->helper('aska.decrypt_' => sub {
+  my ($self, $caplen, $buf) = @_;
+
+  # 復号
+  $buf =~ s/N/\n/g;
+  $buf =~ s/([0-9A-Fa-f]{2})/pack('H2', $1)/eg;
+  my $plain = Crypt::RC4( $config->{captcha_key}, $buf );
+
+  # 先頭の数字を抽出
+  $plain =~ s/^(\d{$caplen}).*/$1/ or &err_img;
+  return $plain;
+});
 
 # テストページ
 get '/test';
@@ -122,10 +262,10 @@ any '/' => sub {
       }
       
       # ホスト取得
-      my ($host, $addr) = Aska::Util::get_host();
+      my ($host, $addr) = $self->aska->get_host();
       
       # 削除キー暗号化
-      my $pwd = Aska::Util::encrypt($in->{pwd}) if ($in->{pwd} ne "");
+      my $pwd = $self->aska->encrypt($in->{pwd}) if ($in->{pwd} ne "");
       
       # 時間取得
       my $time = time;
@@ -233,7 +373,7 @@ any '/' => sub {
       }
 
       # 削除キーを照合
-      if (Aska::Util::decrypt($in->{pwd},$crypt) != 1) {
+      if (app->aska->decrypt($in->{pwd},$crypt) != 1) {
         close($dat_fh);
         error("認証できません");
       }
@@ -295,7 +435,7 @@ any '/' => sub {
     foreach (@log) {
       my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
       $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
-      $com  = autolink($com) if ($config->{autolink});
+      $com  = $self->aska->autolink($com) if ($config->{autolink});
       $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
       $url  = qq|<a href="$url" target="_blank">$url</a>| if ($url);
 
@@ -353,13 +493,13 @@ any '/' => sub {
   close($in_fh);
 
   # 繰越ボタン作成
-  my $page_btn = Aska::Util::make_pager($i,$pg);
+  my $page_btn = $self->aska->make_pager($i,$pg);
 
   # ループ部
   foreach (@log) {
     my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
     $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
-    $com = Aska::Util::autolink($com) if ($config->{autolink});
+    $com = $self->aska->autolink($com) if ($config->{autolink});
     $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
     $com .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
 
@@ -630,7 +770,7 @@ get '/captcha' => sub {
   }
 
   # 復号
-  my $plain = Aska::Util::decrypt_($config->{cap_len}, $buf);
+  my $plain = $self->aska->decrypt_($config->{cap_len}, $buf);
 
   # 認証画像作成
   my $img_bin;
@@ -646,7 +786,7 @@ get '/captcha' => sub {
     }
     else {
       my $si_png_path = $self->app->home->rel_file("/public/images/$config->{si_png}");
-      Aska::Util::load_pngren($plain, "$si_png_path");
+      $self->aska->load_pngren($plain, "$si_png_path");
     }
   }
   
@@ -713,7 +853,6 @@ EOM
   use strict;
   use warnings;
   
-  use Crypt::RC4;
   sub search {
     my ($word,$cond) = @_;
 
@@ -808,160 +947,6 @@ EOM
     close(MAIL);
   }
 
-  #  自動リンク
-  sub autolink {
-    my $text = shift;
-
-    $text =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
-    return $text;
-  }
-
-  #  アクセス制限
-  sub get_host {
-    # IP&ホスト取得
-    my $host = $ENV{REMOTE_HOST};
-    my $addr = $ENV{REMOTE_ADDR};
-    if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
-      $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
-    }
-
-    # IPチェック
-    my $flg;
-    foreach ( split(/\s+/,$config->{deny_addr}) ) {
-      s/\./\\\./g;
-      s/\*/\.\*/g;
-
-      if ($addr =~ /^$_/i) { $flg++; last; }
-    }
-    if ($flg) {
-      error("アクセスを許可されていません");
-
-    # ホストチェック
-    } elsif ($host) {
-
-      foreach ( split(/\s+/,$config->{deny_host}) ) {
-        s/\./\\\./g;
-        s/\*/\.\*/g;
-
-        if ($host =~ /$_$/i) { $flg++; last; }
-      }
-      if ($flg) {
-        error("アクセスを許可されていません");
-      }
-    }
-
-    if ($host eq "") { $host = $addr; }
-    return ($host,$addr);
-  }
-
-  #  crypt暗号
-  sub encrypt {
-    my $in = shift;
-
-    my @wd = (0 .. 9, 'a'..'z', 'A'..'Z', '.', '/');
-    srand;
-    my $salt = $wd[int(rand(@wd))] . $wd[int(rand(@wd))];
-    crypt($in,$salt) || crypt ($in,'$1$'.$salt);
-  }
-
-
-  #  crypt照合
-  sub decrypt {
-    my ($in,$dec) = @_;
-
-    my $salt = $dec =~ /^\$1\$(.*)\$/ ? $1 : substr($dec,0,2);
-    if (crypt($in,$salt) eq $dec || crypt($in,'$1$'.$salt) eq $dec) {
-      return 1;
-    } else {
-      return 0;
-    }
-  }
-
-
-  #  完了メッセージ
-  sub message {
-    my $msg = shift;
-
-    open(my $in_fh,"$config->{tmpldir}/message.html") or error("open error: message.html");
-    my $tmpl = join('', <$in_fh>);
-    close($in_fh);
-
-    $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
-    $tmpl =~ s/!message!/$msg/g;
-
-    print "Content-type: text/html; charset=shift_jis\n\n";
-    print $tmpl;
-  }
-
-  #  ページ送り作成
-  sub make_pager {
-    my ($i,$pg) = @_;
-
-    # ページ繰越数定義
-    $config->{pg_max} ||= 10;
-    my $next = $pg + $config->{pg_max};
-    my $back = $pg - $config->{pg_max};
-
-    # ページ繰越ボタン作成
-    my @pg;
-    if ($back >= 0 || $next < $i) {
-      my $flg;
-      my ($w,$x,$y,$z) = (0,1,0,$i);
-      while ($z > 0) {
-        if ($pg == $y) {
-          $flg++;
-          push(@pg,qq!<li><span>$x</span></li>\n!);
-        } else {
-          push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
-        }
-        $x++;
-        $y += $config->{pg_max};
-        $z -= $config->{pg_max};
-
-        if ($flg) { $w++; }
-        last if ($w >= 5 && @pg >= 10);
-      }
-    }
-    while( @pg >= 11 ) { shift(@pg); }
-    my $ret = join('', @pg);
-    if ($back >= 0) {
-      $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
-    }
-    if ($next < $i) {
-      $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
-    }
-    
-    # 結果を返す
-    return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
-  }
-
-
-  #  認証画像作成 [ライブラリ版]
-  sub load_pngren {
-    my ($plain, $sipng) = @_;
-
-    # 数字
-    my @img = split(//, $plain);
-
-    # 表示開始
-    require $config->{pngren_pl};
-    pngren::PngRen($sipng, \@img);
-  }
-
-  #  復号
-  sub decrypt_ {
-    my ($caplen, $buf) = @_;
-
-    # 復号
-    $buf =~ s/N/\n/g;
-    $buf =~ s/([0-9A-Fa-f]{2})/pack('H2', $1)/eg;
-    my $plain = RC4( $config->{captcha_key}, $buf );
-
-    # 先頭の数字を抽出
-    $plain =~ s/^(\d{$caplen}).*/$1/ or &err_img;
-    return $plain;
-  }
-
   #  エラー処理
   sub err_img {
     # エラー画像
@@ -979,8 +964,6 @@ EOM
       print pack('C*', hex($_));
     }
   }
-
-  sub error { }
 }
 
 app->start;
