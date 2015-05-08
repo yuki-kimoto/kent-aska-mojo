@@ -1,39 +1,387 @@
 <%
-
-  # コンフィグ
   my $config = app->config;
-  
-  # ホームページ
-  my $homepage = $config->{homepage};
-  
-  # BBSタイトル
-  my $bbs_title = $config->{bbs_title};
-  
-  # 画像キャプチャを使う
-  my $use_captcha = $config->{use_captcha};
 
-
-  # 画像認証作成
-  my $str_plain;
+  # パラメーター
+  my $in = {};
+  $in->{mode} = param('mode');
+  
+  # テンプレートで利用する変数
+  my $bbs_title;
+  my $homepage;
+  my $use_captcha;
   my $str_crypt;
-  if ($use_captcha > 0) {
-    require $config->{captcha_pl};
-    ($str_plain,$str_crypt) = cap::make($config->{captcha_key},$config->{cap_len});
+  my $message;
+  my $error;
+  my $title;
+  
+  if (lc $self->req->method eq 'post') {
+    # 記事投稿
+    if ($in->{mode} eq 'regist') {
+
+      $in->{sub} = param('sub');
+      $in->{name} = param('name');
+      $in->{pwd} = param('pwd');
+      $in->{captcha} = param('captcha');
+      $in->{comment} = param('comment');
+      $in->{str_crypt} = param('str_crypt');
+
+      # 不要改行カット
+      $in->{sub}  =~ s|<br />||g;
+      $in->{name} =~ s|<br />||g;
+      $in->{pwd}  =~ s|<br />||g;
+      $in->{captcha} =~ s|<br />||g;
+      $in->{comment} =~ s|(<br />)+$||g;
+      
+      #  禁止ワードチェック
+      if ($config->{no_wd}) {
+        my $flg;
+        foreach ( split(/,/,$config->{no_wd}) ) {
+          if (index("$in->{name} $in->{sub} $in->{comment}", $_) >= 0) {
+            $flg = 1;
+            last;
+          }
+        }
+        if ($flg) {
+          $error ||= "禁止ワードが含まれています";
+        }
+      }
+
+      # 日本語チェック(漢字、ひらがな、カタカナ)
+      if ($config->{jp_wd}) {
+        if ($in->{comment} !~ /[\p{Han}\p{Hiragana}\p{Katakana}]/) {
+          $error ||= "メッセージに日本語が含まれていません";
+        }
+      }
+
+      #  URL個数チェック
+      if ($config->{urlnum} > 0) {
+        my $com = $in->{comment};
+        my ($num) = ($com =~ s|(https?://)|$1|ig);
+        if ($num > $config->{urlnum}) {
+          $error ||= "コメント中のURLアドレスは最大$config->{urlnum}個までです";
+        }
+      }
+
+      # 画像認証チェック
+      if ($config->{use_captcha} > 0) {
+        require $config->{captcha_pl};
+        if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
+          $error ||= "画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください";
+        }
+
+        # 投稿キーチェック
+        # -1 : キー不一致
+        #  0 : 制限時間オーバー
+        #  1 : キー一致
+        my $chk = cap::check($in->{captcha},$in->{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
+        if ($chk == 0) {
+          $error = "画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください";
+        } elsif ($chk == -1) {
+          $error = "画像認証が不正です。<br />投稿フォームに戻って再読込み後再入力してください";
+        }
+      }
+
+      # 未入力の場合
+      if ($in->{url} eq "http://") { $in->{url} = ""; }
+      $in->{sub} ||= '無題';
+
+      # フォーム内容をチェック
+      if ($in->{name} eq "") {
+        $error ||= "名前が入力されていません<br />";
+      }
+      if ($in->{comment} eq "") {
+        $error ||= "コメントが入力されていません<br />";
+      }
+      if ($in->{email} ne '' && $in->{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
+        $error ||= "Ｅメールの入力内容が不正です<br />";
+      }
+      if ($in->{url} ne '' && $in->{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
+        $error ||= "参照先URLの入力内容が不正です<br />";
+      }
+      
+      # ホスト取得
+      my ($host, $addr) = $self->aska->get_host();
+      
+      # 削除キー暗号化
+      my $pwd = $self->aska->encrypt($in->{pwd}) if ($in->{pwd} ne "");
+      
+      # 時間取得
+      my $time = time;
+      my ($min,$hour,$mday,$mon,$year,$wday) = (localtime($time))[1..6];
+      my @wk = ('Sun','Mon','Tue','Wed','Thu','Fri','Sat');
+      my $date = sprintf("%04d/%02d/%02d(%s) %02d:%02d",
+            $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
+      
+      # 先頭記事読み取り
+      my $logfile_abs = app->home->rel_file($config->{logfile});
+      open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
+      flock($dat_fh, 2);;
+      my $top = <$dat_fh>;
+      
+      # 重複投稿チェック
+      my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/,$top);
+      if ($in->{name} eq $nam && $in->{comment} eq $com) {
+        close($dat_fh);
+        $error ||= "二重投稿は禁止です";
+      }
+
+      # 連続投稿チェック
+      my $flg;
+      if ($config->{regCtl} == 1) {
+        if ($host eq $hos && $time - $tim < $config->{wait}) {
+          $flg = 1;
+        }
+      } elsif ($config->{regCtl} == 2) {
+        if ($time - $tim < $config->{wait}) {
+          $flg = 1;
+        }
+      }
+      if ($flg) {
+        close($dat_fh);
+        $error ||= error("現在投稿制限中です。もうしばらくたってから投稿をお願いします");
+      }
+      
+      unless ($error) {
+        # 記事No採番
+        $no++;
+
+        # 記事数調整
+        my @data = ($top);
+        my $i = 0;
+        while (<$dat_fh>) {
+          $i++;
+          push(@data,$_);
+
+          last if ($i >= $config->{maxlog}-1);
+        }
+
+        # 更新
+        seek($dat_fh, 0, 0);
+        print $dat_fh "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
+        print $dat_fh @data;
+        truncate($dat_fh, tell($dat_fh));
+        close($dat_fh);
+
+        # クッキー格納
+        $self->session(name => $in->{name});
+        $self->session(email => $in->{email});
+        $self->session(url => $in->{url});
+
+        # メール通知
+        $self->aska->mail_to($in, $date,$host) if ($config->{mailing} == 1);
+
+        # 完了画面
+        $message = "ありがとうございます。記事を受理しました。";
+      }
+    }
+    
+    # ユーザー記事削除
+    if ($in->{mode} eq 'dele') {
+      $in->{num} = param('in');
+      $in->{pwd} = param('pwd');
+    
+      # 入力チェック
+      if ($in->{num} eq '' or $in->{pwd} eq '') {
+        error("削除Noまたは削除キーが入力モレです");
+      }
+
+      my ($flg,$crypt,@log);
+      my $logfile_abs = app->home->rel_file($config->{logfile});
+      open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
+      flock($dat_fh, 2);;
+      while (<$dat_fh>) {
+        my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
+
+        if ($in->{num} == $no) {
+          $flg++;
+          $crypt = $pw;
+          next;
+        }
+        push(@log,$_);
+      }
+
+      if (!$flg or !$crypt) {
+        close($dat_fh);
+        error("削除キーが設定されていないか又は記事が見当たりません");
+      }
+
+      # 削除キーを照合
+      if (app->aska->decrypt($in->{pwd},$crypt) != 1) {
+        close($dat_fh);
+        error("認証できません");
+      }
+
+      # ログ更新
+      seek($dat_fh, 0, 0);
+      print $dat_fh @log;
+      truncate($dat_fh, tell($dat_fh));
+      close($dat_fh);
+
+      # 完了
+      $message = "記事を削除しました";
+    }
+  }
+  else {
+    # ワード検索
+    if ($in->{mode} eq 'find') {
+      $in->{cond} = param('cond');
+      $in->{word} = param('word');
+      
+      # 条件
+      $in->{cond} =~ s/\D//g;
+      $in->{word} =~ s|<br />||g;
+
+      # 検索条件プルダウン
+      my %op = (1 => 'AND', 0 => 'OR');
+      my $op_cond;
+      foreach (1,0) {
+        if ($in->{cond} eq $_) {
+          $op_cond .= qq|<option value="$_" selected="selected">$op{$_}</option>\n|;
+        } else {
+          $op_cond .= qq|<option value="$_">$op{$_}</option>\n|;
+        }
+      }
+
+      # 検索実行
+      $in->{word} = Jcode->new($in->{word})->sjis if ($config->{chg_code} == 1);
+      my @log = $self->aska->search($in->{word},$in->{cond}) if ($in->{word} ne '');
+
+      # テンプレート読み込み
+      open(my $in_fh,"$config->{tmpldir}/find.html") or error("open error: find.html");
+      my $tmpl = join('', <$in_fh>);
+      close($in_fh);
+
+      # 文字置換
+      $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
+      $tmpl =~ s/<!-- op_cond -->/$op_cond/;
+      $tmpl =~ s/!word!/$in->{word}/;
+
+      # テンプレート分割
+      my ($head,$loop,$foot) = $tmpl =~ /(.+)<!-- loop_begin -->(.+)<!-- loop_end -->(.+)/s
+          ? ($1,$2,$3) : error("テンプレート不正");
+
+      # ヘッダ部
+      print "Content-type: text/html; charset=shift_jis\n\n";
+      print $head;
+
+      # ループ部
+      foreach (@log) {
+        my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
+        $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
+        $com  = $self->aska->autolink($com) if ($config->{autolink});
+        $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
+        $url  = qq|<a href="$url" target="_blank">$url</a>| if ($url);
+
+        my $tmp = $loop;
+        $tmp =~ s/!sub!/$sub/g;
+        $tmp =~ s/!date!/$date/g;
+        $tmp =~ s/!name!/$name/g;
+        $tmp =~ s/!home!/$url/g;
+        $tmp =~ s/!comment!/$com/g;
+        print $tmp;
+      }
+    }
+    else {
+      #  記事表示
+      $in->{res} = param('res');
+      
+      $in->{res} =~ s/\D//g;
+      my %res;
+      if ($in->{res}) {
+        my $flg;
+        my $logfile_abs = app->home->rel_file($config->{logfile});
+        open(my $in_fh,"$logfile_abs") or error("open error: $logfile_abs");
+        while (<$in_fh>) {
+          my ($no,$sub,$com) = (split(/<>/))[0,4,5];
+          if ($in->{res} == $no) {
+            $flg++;
+            $res{sub} = $sub;
+            $res{com} = $com;
+            last;
+          }
+        }
+        close($in_fh);
+
+        if (!$flg) { error("該当記事が見つかりません"); }
+
+        $res{sub} =~ s/^Re://g;
+        $res{sub} =~ s/\[\d+\]\s?//g;
+        $res{sub} = "Re:[$in->{res}] $res{sub}";
+        $res{com} = "&gt; $res{com}";
+        $res{com} =~ s|<br( /)?>|\n&gt; |ig;
+      }
+
+      # ページ数定義
+      my $pg = $in->{pg} || 0;
+
+      # データオープン
+      my ($i,@log);
+      my $logfile_abs = app->home->rel_file($config->{logfile});
+      open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
+      while (<$in_fh>) {
+        $i++;
+        next if ($i < $pg + 1);
+        next if ($i > $pg + $config->{pg_max});
+
+        push(@log,$_);
+      }
+      close($in_fh);
+
+      # 繰越ボタン作成
+      my $page_btn = $self->aska->make_pager($i,$pg);
+
+      # ループ部
+      foreach (@log) {
+        my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
+        $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
+        $com = $self->aska->autolink($com) if ($config->{autolink});
+        $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
+        $com .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
+
+        my $tmp = 'bbs body'; # 一時書き換え
+        $tmp =~ s/!num!/$no/g;
+        $tmp =~ s/!sub!/$sub/g;
+        $tmp =~ s/!name!/$name/g;
+        $tmp =~ s/!date!/$date/g;
+        $tmp =~ s/!comment!/$com/g;
+        $tmp =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
+        print $tmp;
+      }
+
+      # コンフィグ
+      my $config = app->config;
+      
+      # ホームページ
+      $homepage = $config->{homepage};
+      
+      # BBSタイトル
+      $bbs_title = $config->{bbs_title};
+      
+      # 画像キャプチャを使う
+      $use_captcha = $config->{use_captcha};
+
+      # 画像認証作成
+      my $str_plain;
+      if ($use_captcha > 0) {
+        require $config->{captcha_pl};
+        ($str_plain,$str_crypt) = cap::make($config->{captcha_key},$config->{cap_len});
+      }
+      
+      # スタッシュ
+      $title = $bbs_title;
+    }
   }
   
-  # スタッシュ
-  stash title => $bbs_title;
-  
   # レイアウト
-  layout 'common';
+  layout 'common', title => $title;
 %>
 
 <%= include '/include/header' %>
 
-% if (stash('message')) {
-  <%= include 'include/message' %>
-% } elsif (stash('error')) {
-  <%= include 'include/error' %>
+% if ($message) {
+  <%= include 'include/message', message => $message %>
+% } elsif ($error) {
+  <%= include 'include/error', error => $error %>
 % } else {
 
   <div align="center">

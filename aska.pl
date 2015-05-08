@@ -11,272 +11,6 @@ use Crypt::RC4;
 # コンフィグの読み込み
 plugin 'Config';
 
-# ヘルパー定義
-# 自動リンク
-app->helper('aska.autolink' => sub {
-  my ($self, $text) = @_;
-
-  $text =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
-  return $text;
-});
-
-#  アクセス制限
-app->helper('aska.get_host' => sub {
-  my $self = shift;
-  
-  my $config = $self->app->config;
-  
-  # IP&ホスト取得
-  my $host = $ENV{REMOTE_HOST};
-  my $addr = $ENV{REMOTE_ADDR};
-  if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
-    $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
-  }
-
-  # IPチェック
-  my $flg;
-  foreach ( split(/\s+/,$config->{deny_addr}) ) {
-    s/\./\\\./g;
-    s/\*/\.\*/g;
-
-    if ($addr =~ /^$_/i) { $flg++; last; }
-  }
-  if ($flg) {
-    error("アクセスを許可されていません");
-
-  # ホストチェック
-  } elsif ($host) {
-
-    foreach ( split(/\s+/,$config->{deny_host}) ) {
-      s/\./\\\./g;
-      s/\*/\.\*/g;
-
-      if ($host =~ /$_$/i) { $flg++; last; }
-    }
-    if ($flg) {
-      error("アクセスを許可されていません");
-    }
-  }
-
-  if ($host eq "") { $host = $addr; }
-  return ($host,$addr);
-});
-
-#  crypt暗号
-app->helper('aska.encrypt' => sub {
-  my ($self, $in) = @_;
-
-  my @wd = (0 .. 9, 'a'..'z', 'A'..'Z', '.', '/');
-  srand;
-  my $salt = $wd[int(rand(@wd))] . $wd[int(rand(@wd))];
-  crypt($in,$salt) || crypt ($in,'$1$'.$salt);
-});
-
-# crypt照合
-app->helper('aska.decrypt' => sub {
-  my ($self, $in, $dec) = @_;
-
-  my $salt = $dec =~ /^\$1\$(.*)\$/ ? $1 : substr($dec,0,2);
-  if (crypt($in,$salt) eq $dec || crypt($in,'$1$'.$salt) eq $dec) {
-    return 1;
-  } else {
-    return 0;
-  }
-});
-
-# ページ送り作成
-app->helper('aska.make_pager' => sub {
-  my ($self, $i,$pg) = @_;
-  
-  my $config = $self->app->config;
-
-  # ページ繰越数定義
-  $config->{pg_max} ||= 10;
-  my $next = $pg + $config->{pg_max};
-  my $back = $pg - $config->{pg_max};
-
-  # ページ繰越ボタン作成
-  my @pg;
-  if ($back >= 0 || $next < $i) {
-    my $flg;
-    my ($w,$x,$y,$z) = (0,1,0,$i);
-    while ($z > 0) {
-      if ($pg == $y) {
-        $flg++;
-        push(@pg,qq!<li><span>$x</span></li>\n!);
-      } else {
-        push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
-      }
-      $x++;
-      $y += $config->{pg_max};
-      $z -= $config->{pg_max};
-
-      if ($flg) { $w++; }
-      last if ($w >= 5 && @pg >= 10);
-    }
-  }
-  while( @pg >= 11 ) { shift(@pg); }
-  my $ret = join('', @pg);
-  if ($back >= 0) {
-    $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
-  }
-  if ($next < $i) {
-    $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
-  }
-  
-  # 結果を返す
-  return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
-});
-
-#  認証画像作成 [ライブラリ版]
-app->helper('aska.load_pngren' => sub {
-  my ($self, $plain, $sipng) = @_;
-  
-  my $config = $self->app->config;
-
-  # 数字
-  my @img = split(//, $plain);
-
-  # 表示開始
-  require $config->{pngren_pl};
-  pngren::PngRen($sipng, \@img);
-});
-
-#  復号
-app->helper('aska.decrypt_' => sub {
-  my ($self, $caplen, $buf) = @_;
-  
-  my $config = $self->app->config;
-
-  # 復号
-  $buf =~ s/N/\n/g;
-  $buf =~ s/([0-9A-Fa-f]{2})/pack('H2', $1)/eg;
-  my $plain = Crypt::RC4::RC4( $config->{captcha_key}, $buf );
-
-  # 先頭の数字を抽出
-  $plain =~ s/^(\d{$caplen}).*/$1/ or &err_img;
-  return $plain;
-});
-
-app->helper('aska.search' => sub {
-  my ($self, $word,$cond) = @_;
-  
-  my $config = $self->app->config;
-
-  # キーワードを配列化
-  $word =~ s/\x81\x40/ /g;
-  my @wd = split(/\s+/,$word);
-
-  # キーワード検索準備（Shift-JIS定義）
-  my $ascii = '[\x00-\x7F]';
-  my $hanka = '[\xA1-\xDF]';
-  my $kanji = '[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]';
-
-  # 検索処理
-  my @log;
-  my $logfile_abs = app->home->rel_file($config->{logfile});
-  open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
-  while (<$in_fh>) {
-    my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
-
-    my $flg;
-    foreach my $wd (@wd) {
-      if ("$nam $eml $sub $com $url" =~ /^(?:$ascii|$hanka|$kanji)*?\Q$wd\E/i) {
-        $flg++;
-        if ($cond == 0) { last; }
-      } else {
-        if ($cond == 1) { $flg = 0; last; }
-      }
-    }
-    next if (!$flg);
-
-    push(@log,$_);
-  }
-  close($in_fh);
-
-  # 検索結果
-  return @log;
-});
-
-app->helper('aska.mail_to' => sub {
-
-  my ($self, $in, $date,$host) = @_;
-  
-  my $config = $self->app->config;
-
-  # 件名をMIMEエンコード
-  if ($config->{chg_code} == 0) { require Jcode; }
-  my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
-
-  # コメント内の改行復元
-  my $com = $in->{comment};
-  $com =~ s/<br>/\n/g;
-  $com =~ s/&lt;/>/g;
-  $com =~ s/&gt;/</g;
-  $com =~ s/&quot;/"/g;
-  $com =~ s/&amp;/&/g;
-  $com =~ s/&#39;/'/g;
-
-  # メール本文を定義
-  my $mbody = <<EOM;
-掲示板に投稿がありました。
-
-投稿日：$date
-ホスト：$host
-
-件名  ：$in->{sub}
-お名前：$in->{name}
-E-mail：$in->{email}
-URL   ：$in->{url}
-
-$com
-EOM
-
-  # JISコード変換
-  $mbody = Jcode->new($mbody,'sjis')->jis;
-
-  # メールアドレスがない場合は管理者メールに置き換え
-  $in->{email} ||= $config->{mailto};
-
-  # sendmailコマンド
-  my $scmd = "$config->{sendmail} -t -i";
-  if ($config->{sendm_f}) {
-    $scmd .= " -f $in->{email}";
-  }
-
-  # 送信
-  open(MAIL,"| $scmd") or error("送信失敗");
-  print MAIL "To: $config->{mailto}\n";
-  print MAIL "From: $in->{email}\n";
-  print MAIL "Subject: $msub\n";
-  print MAIL "MIME-Version: 1.0\n";
-  print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
-  print MAIL "Content-Transfer-Encoding: 7bit\n";
-  print MAIL "X-Mailer: $config->{version}\n\n";
-  print MAIL "$mbody\n";
-  close(MAIL);
-});
-
-#  エラー処理
-app->helper('aska.err_img' => sub {
-  my $self = shift;
-  
-  # エラー画像
-  my @err = qw{
-    47 49 46 38 39 61 2d 00 0f 00 80 00 00 00 00 00 ff ff ff 2c
-    00 00 00 00 2d 00 0f 00 00 02 49 8c 8f a9 cb ed 0f a3 9c 34
-    81 7b 03 ce 7a 23 7c 6c 00 c4 19 5c 76 8e dd ca 96 8c 9b b6
-    63 89 aa ee 22 ca 3a 3d db 6a 03 f3 74 40 ac 55 ee 11 dc f9
-    42 bd 22 f0 a7 34 2d 63 4e 9c 87 c7 93 fe b2 95 ae f7 0b 0e
-    8b c7 de 02 00 3b
-  };
-
-  print "Content-type: image/gif\n\n";
-  foreach (@err) {
-    print pack('C*', hex($_));
-  }
-});
-
 # テストページ
 get '/test';
 
@@ -290,361 +24,7 @@ get '/find';
 get '/admin';
 
 # BBS(トップページ )
-any '/' => sub {
-  my $self = shift;
-  
-  my $config = $self->app->config;
-
-  # パラメーター
-  my $in = {};
-  $in->{mode} = $self->param('mode');
-  
-  if (lc $self->req->method eq 'post') {
-    # 記事投稿
-    if ($in->{mode} eq 'regist') {
-
-      $in->{sub} = $self->param('sub');
-      $in->{name} = $self->param('name');
-      $in->{pwd} = $self->param('pwd');
-      $in->{captcha} = $self->param('captcha');
-      $in->{comment} = $self->param('comment');
-      $in->{str_crypt} = $self->param('str_crypt');
-
-      # 不要改行カット
-      $in->{sub}  =~ s|<br />||g;
-      $in->{name} =~ s|<br />||g;
-      $in->{pwd}  =~ s|<br />||g;
-      $in->{captcha} =~ s|<br />||g;
-      $in->{comment} =~ s|(<br />)+$||g;
-      
-      # エラー
-      my $error;
-      
-      #  禁止ワードチェック
-      if ($config->{no_wd}) {
-        my $flg;
-        foreach ( split(/,/,$config->{no_wd}) ) {
-          if (index("$in->{name} $in->{sub} $in->{comment}", $_) >= 0) {
-            $flg = 1;
-            last;
-          }
-        }
-        if ($flg) {
-          $error ||= "禁止ワードが含まれています";
-        }
-      }
-
-      # 日本語チェック(漢字、ひらがな、カタカナ)
-      if ($config->{jp_wd}) {
-        if ($in->{comment} !~ /[\p{Han}\p{Hiragana}\p{Katakana}]/) {
-          $error ||= "メッセージに日本語が含まれていません";
-        }
-      }
-
-      #  URL個数チェック
-      if ($config->{urlnum} > 0) {
-        my $com = $in->{comment};
-        my ($num) = ($com =~ s|(https?://)|$1|ig);
-        if ($num > $config->{urlnum}) {
-          $error ||= "コメント中のURLアドレスは最大$config->{urlnum}個までです";
-        }
-      }
-
-      # 画像認証チェック
-      if ($config->{use_captcha} > 0) {
-        require $config->{captcha_pl};
-        if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
-          $error ||= "画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください";
-        }
-
-        # 投稿キーチェック
-        # -1 : キー不一致
-        #  0 : 制限時間オーバー
-        #  1 : キー一致
-        my $chk = cap::check($in->{captcha},$in->{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
-        if ($chk == 0) {
-          $error = "画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください";
-        } elsif ($chk == -1) {
-          $error = "画像認証が不正です。<br />投稿フォームに戻って再読込み後再入力してください";
-        }
-      }
-
-      # 未入力の場合
-      if ($in->{url} eq "http://") { $in->{url} = ""; }
-      $in->{sub} ||= '無題';
-
-      # フォーム内容をチェック
-      if ($in->{name} eq "") {
-        $error ||= "名前が入力されていません<br />";
-      }
-      if ($in->{comment} eq "") {
-        $error ||= "コメントが入力されていません<br />";
-      }
-      if ($in->{email} ne '' && $in->{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
-        $error ||= "Ｅメールの入力内容が不正です<br />";
-      }
-      if ($in->{url} ne '' && $in->{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
-        $error ||= "参照先URLの入力内容が不正です<br />";
-      }
-      
-      # ホスト取得
-      my ($host, $addr) = $self->aska->get_host();
-      
-      # 削除キー暗号化
-      my $pwd = $self->aska->encrypt($in->{pwd}) if ($in->{pwd} ne "");
-      
-      # 時間取得
-      my $time = time;
-      my ($min,$hour,$mday,$mon,$year,$wday) = (localtime($time))[1..6];
-      my @wk = ('Sun','Mon','Tue','Wed','Thu','Fri','Sat');
-      my $date = sprintf("%04d/%02d/%02d(%s) %02d:%02d",
-            $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
-      
-      # 先頭記事読み取り
-      my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
-      flock($dat_fh, 2);;
-      my $top = <$dat_fh>;
-      
-      # 重複投稿チェック
-      my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/,$top);
-      if ($in->{name} eq $nam && $in->{comment} eq $com) {
-        close($dat_fh);
-        $error ||= "二重投稿は禁止です";
-      }
-
-      # 連続投稿チェック
-      my $flg;
-      if ($config->{regCtl} == 1) {
-        if ($host eq $hos && $time - $tim < $config->{wait}) {
-          $flg = 1;
-        }
-      } elsif ($config->{regCtl} == 2) {
-        if ($time - $tim < $config->{wait}) {
-          $flg = 1;
-        }
-      }
-      if ($flg) {
-        close($dat_fh);
-        $error ||= error("現在投稿制限中です。もうしばらくたってから投稿をお願いします");
-      }
-      
-      if ($error) {
-        $self->stash(error => $error);
-        $self->render(template => 'bbs');
-        return;
-      }
-      else {
-        # 記事No採番
-        $no++;
-
-        # 記事数調整
-        my @data = ($top);
-        my $i = 0;
-        while (<$dat_fh>) {
-          $i++;
-          push(@data,$_);
-
-          last if ($i >= $config->{maxlog}-1);
-        }
-
-        # 更新
-        seek($dat_fh, 0, 0);
-        print $dat_fh "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
-        print $dat_fh @data;
-        truncate($dat_fh, tell($dat_fh));
-        close($dat_fh);
-
-        # クッキー格納
-        $self->session(name => $in->{name});
-        $self->session(email => $in->{email});
-        $self->session(url => $in->{url});
-
-        # メール通知
-        $self->aska->mail_to($in, $date,$host) if ($config->{mailing} == 1);
-
-        # 完了画面
-        $self->stash(message => "ありがとうございます。記事を受理しました。");
-        $self->render(template => 'bbs');
-        return;
-      }
-    }
-    
-    # ユーザー記事削除
-    if ($in->{mode} eq 'dele') {
-      $in->{num} = $self->param('in');
-      $in->{pwd} = $self->param('pwd');
-    
-      # 入力チェック
-      if ($in->{num} eq '' or $in->{pwd} eq '') {
-        error("削除Noまたは削除キーが入力モレです");
-      }
-
-      my ($flg,$crypt,@log);
-      my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
-      flock($dat_fh, 2);;
-      while (<$dat_fh>) {
-        my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
-
-        if ($in->{num} == $no) {
-          $flg++;
-          $crypt = $pw;
-          next;
-        }
-        push(@log,$_);
-      }
-
-      if (!$flg or !$crypt) {
-        close($dat_fh);
-        error("削除キーが設定されていないか又は記事が見当たりません");
-      }
-
-      # 削除キーを照合
-      if (app->aska->decrypt($in->{pwd},$crypt) != 1) {
-        close($dat_fh);
-        error("認証できません");
-      }
-
-      # ログ更新
-      seek($dat_fh, 0, 0);
-      print $dat_fh @log;
-      truncate($dat_fh, tell($dat_fh));
-      close($dat_fh);
-
-      # 完了
-      message("記事を削除しました");
-    }
-  }
-  
-  # ワード検索
-  if ($in->{mode} eq 'find') {
-    $in->{cond} = $self->param('cond');
-    $in->{word} = $self->param('word');
-    
-    # 条件
-    $in->{cond} =~ s/\D//g;
-    $in->{word} =~ s|<br />||g;
-
-    # 検索条件プルダウン
-    my %op = (1 => 'AND', 0 => 'OR');
-    my $op_cond;
-    foreach (1,0) {
-      if ($in->{cond} eq $_) {
-        $op_cond .= qq|<option value="$_" selected="selected">$op{$_}</option>\n|;
-      } else {
-        $op_cond .= qq|<option value="$_">$op{$_}</option>\n|;
-      }
-    }
-
-    # 検索実行
-    $in->{word} = Jcode->new($in->{word})->sjis if ($config->{chg_code} == 1);
-    my @log = $self->aska->search($in->{word},$in->{cond}) if ($in->{word} ne '');
-
-    # テンプレート読み込み
-    open(my $in_fh,"$config->{tmpldir}/find.html") or error("open error: find.html");
-    my $tmpl = join('', <$in_fh>);
-    close($in_fh);
-
-    # 文字置換
-    $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
-    $tmpl =~ s/<!-- op_cond -->/$op_cond/;
-    $tmpl =~ s/!word!/$in->{word}/;
-
-    # テンプレート分割
-    my ($head,$loop,$foot) = $tmpl =~ /(.+)<!-- loop_begin -->(.+)<!-- loop_end -->(.+)/s
-        ? ($1,$2,$3) : error("テンプレート不正");
-
-    # ヘッダ部
-    print "Content-type: text/html; charset=shift_jis\n\n";
-    print $head;
-
-    # ループ部
-    foreach (@log) {
-      my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
-      $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
-      $com  = $self->aska->autolink($com) if ($config->{autolink});
-      $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
-      $url  = qq|<a href="$url" target="_blank">$url</a>| if ($url);
-
-      my $tmp = $loop;
-      $tmp =~ s/!sub!/$sub/g;
-      $tmp =~ s/!date!/$date/g;
-      $tmp =~ s/!name!/$name/g;
-      $tmp =~ s/!home!/$url/g;
-      $tmp =~ s/!comment!/$com/g;
-      print $tmp;
-    }
-  }
-
-  #  記事表示
-  $in->{res} = $self->param('res');
-  
-  $in->{res} =~ s/\D//g;
-  my %res;
-  if ($in->{res}) {
-    my $flg;
-    my $logfile_abs = app->home->rel_file($config->{logfile});
-    open(my $in_fh,"$logfile_abs") or error("open error: $logfile_abs");
-    while (<$in_fh>) {
-      my ($no,$sub,$com) = (split(/<>/))[0,4,5];
-      if ($in->{res} == $no) {
-        $flg++;
-        $res{sub} = $sub;
-        $res{com} = $com;
-        last;
-      }
-    }
-    close($in_fh);
-
-    if (!$flg) { error("該当記事が見つかりません"); }
-
-    $res{sub} =~ s/^Re://g;
-    $res{sub} =~ s/\[\d+\]\s?//g;
-    $res{sub} = "Re:[$in->{res}] $res{sub}";
-    $res{com} = "&gt; $res{com}";
-    $res{com} =~ s|<br( /)?>|\n&gt; |ig;
-  }
-
-  # ページ数定義
-  my $pg = $in->{pg} || 0;
-
-  # データオープン
-  my ($i,@log);
-  my $logfile_abs = app->home->rel_file($config->{logfile});
-  open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
-  while (<$in_fh>) {
-    $i++;
-    next if ($i < $pg + 1);
-    next if ($i > $pg + $config->{pg_max});
-
-    push(@log,$_);
-  }
-  close($in_fh);
-
-  # 繰越ボタン作成
-  my $page_btn = $self->aska->make_pager($i,$pg);
-
-  # ループ部
-  foreach (@log) {
-    my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
-    $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
-    $com = $self->aska->autolink($com) if ($config->{autolink});
-    $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
-    $com .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
-
-    my $tmp = 'bbs body'; # 一時書き換え
-    $tmp =~ s/!num!/$no/g;
-    $tmp =~ s/!sub!/$sub/g;
-    $tmp =~ s/!name!/$name/g;
-    $tmp =~ s/!date!/$date/g;
-    $tmp =~ s/!comment!/$com/g;
-    $tmp =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
-    print $tmp;
-  }
-  
-  $self->render(template => 'bbs');
-};
+any '/' => 'bbs';
 
 get '/admin' => sub {
   my $self = shift;
@@ -918,7 +298,7 @@ get '/captcha' => sub {
     if ($config->{use_captcha} == 2) {
       require $config->{captsec_pl};
       my $font_ttl_path = $self->app->home->rel_file("/public/images/$config->{font_ttl}");
-      Aska::Util::load_capsec($plain, "$font_ttl_path");
+      $self->aska->load_capsec($plain, "$font_ttl_path");
     }
     else {
       my $si_png_path = $self->app->home->rel_file("/public/images/$config->{si_png}");
@@ -986,5 +366,271 @@ EOM
 EOM
 
 };
+
+# ヘルパー定義
+# 自動リンク
+app->helper('aska.autolink' => sub {
+  my ($self, $text) = @_;
+
+  $text =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
+  return $text;
+});
+
+#  アクセス制限
+app->helper('aska.get_host' => sub {
+  my $self = shift;
+  
+  my $config = $self->app->config;
+  
+  # IP&ホスト取得
+  my $host = $ENV{REMOTE_HOST};
+  my $addr = $ENV{REMOTE_ADDR};
+  if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
+    $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
+  }
+
+  # IPチェック
+  my $flg;
+  foreach ( split(/\s+/,$config->{deny_addr}) ) {
+    s/\./\\\./g;
+    s/\*/\.\*/g;
+
+    if ($addr =~ /^$_/i) { $flg++; last; }
+  }
+  if ($flg) {
+    error("アクセスを許可されていません");
+
+  # ホストチェック
+  } elsif ($host) {
+
+    foreach ( split(/\s+/,$config->{deny_host}) ) {
+      s/\./\\\./g;
+      s/\*/\.\*/g;
+
+      if ($host =~ /$_$/i) { $flg++; last; }
+    }
+    if ($flg) {
+      error("アクセスを許可されていません");
+    }
+  }
+
+  if ($host eq "") { $host = $addr; }
+  return ($host,$addr);
+});
+
+#  crypt暗号
+app->helper('aska.encrypt' => sub {
+  my ($self, $in) = @_;
+
+  my @wd = (0 .. 9, 'a'..'z', 'A'..'Z', '.', '/');
+  srand;
+  my $salt = $wd[int(rand(@wd))] . $wd[int(rand(@wd))];
+  crypt($in,$salt) || crypt ($in,'$1$'.$salt);
+});
+
+# crypt照合
+app->helper('aska.decrypt' => sub {
+  my ($self, $in, $dec) = @_;
+
+  my $salt = $dec =~ /^\$1\$(.*)\$/ ? $1 : substr($dec,0,2);
+  if (crypt($in,$salt) eq $dec || crypt($in,'$1$'.$salt) eq $dec) {
+    return 1;
+  } else {
+    return 0;
+  }
+});
+
+# ページ送り作成
+app->helper('aska.make_pager' => sub {
+  my ($self, $i,$pg) = @_;
+  
+  my $config = $self->app->config;
+
+  # ページ繰越数定義
+  $config->{pg_max} ||= 10;
+  my $next = $pg + $config->{pg_max};
+  my $back = $pg - $config->{pg_max};
+
+  # ページ繰越ボタン作成
+  my @pg;
+  if ($back >= 0 || $next < $i) {
+    my $flg;
+    my ($w,$x,$y,$z) = (0,1,0,$i);
+    while ($z > 0) {
+      if ($pg == $y) {
+        $flg++;
+        push(@pg,qq!<li><span>$x</span></li>\n!);
+      } else {
+        push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
+      }
+      $x++;
+      $y += $config->{pg_max};
+      $z -= $config->{pg_max};
+
+      if ($flg) { $w++; }
+      last if ($w >= 5 && @pg >= 10);
+    }
+  }
+  while( @pg >= 11 ) { shift(@pg); }
+  my $ret = join('', @pg);
+  if ($back >= 0) {
+    $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
+  }
+  if ($next < $i) {
+    $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
+  }
+  
+  # 結果を返す
+  return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
+});
+
+#  認証画像作成 [ライブラリ版]
+app->helper('aska.load_pngren' => sub {
+  my ($self, $plain, $sipng) = @_;
+  
+  my $config = $self->app->config;
+
+  # 数字
+  my @img = split(//, $plain);
+
+  # 表示開始
+  require $config->{pngren_pl};
+  pngren::PngRen($sipng, \@img);
+});
+
+#  復号
+app->helper('aska.decrypt_' => sub {
+  my ($self, $caplen, $buf) = @_;
+  
+  my $config = $self->app->config;
+
+  # 復号
+  $buf =~ s/N/\n/g;
+  $buf =~ s/([0-9A-Fa-f]{2})/pack('H2', $1)/eg;
+  my $plain = Crypt::RC4::RC4( $config->{captcha_key}, $buf );
+
+  # 先頭の数字を抽出
+  $plain =~ s/^(\d{$caplen}).*/$1/ or &err_img;
+  return $plain;
+});
+
+app->helper('aska.search' => sub {
+  my ($self, $word,$cond) = @_;
+  
+  my $config = $self->app->config;
+
+  # キーワードを配列化
+  $word =~ s/\x81\x40/ /g;
+  my @wd = split(/\s+/,$word);
+
+  # キーワード検索準備（Shift-JIS定義）
+  my $ascii = '[\x00-\x7F]';
+  my $hanka = '[\xA1-\xDF]';
+  my $kanji = '[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]';
+
+  # 検索処理
+  my @log;
+  my $logfile_abs = app->home->rel_file($config->{logfile});
+  open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
+  while (<$in_fh>) {
+    my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
+
+    my $flg;
+    foreach my $wd (@wd) {
+      if ("$nam $eml $sub $com $url" =~ /^(?:$ascii|$hanka|$kanji)*?\Q$wd\E/i) {
+        $flg++;
+        if ($cond == 0) { last; }
+      } else {
+        if ($cond == 1) { $flg = 0; last; }
+      }
+    }
+    next if (!$flg);
+
+    push(@log,$_);
+  }
+  close($in_fh);
+
+  # 検索結果
+  return @log;
+});
+
+app->helper('aska.mail_to' => sub {
+
+  my ($self, $in, $date,$host) = @_;
+  
+  my $config = $self->app->config;
+
+  # 件名をMIMEエンコード
+  if ($config->{chg_code} == 0) { require Jcode; }
+  my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
+
+  # コメント内の改行復元
+  my $com = $in->{comment};
+  $com =~ s/<br>/\n/g;
+  $com =~ s/&lt;/>/g;
+  $com =~ s/&gt;/</g;
+  $com =~ s/&quot;/"/g;
+  $com =~ s/&amp;/&/g;
+  $com =~ s/&#39;/'/g;
+
+  # メール本文を定義
+  my $mbody = <<EOM;
+掲示板に投稿がありました。
+
+投稿日：$date
+ホスト：$host
+
+件名  ：$in->{sub}
+お名前：$in->{name}
+E-mail：$in->{email}
+URL   ：$in->{url}
+
+$com
+EOM
+
+  # JISコード変換
+  $mbody = Jcode->new($mbody,'sjis')->jis;
+
+  # メールアドレスがない場合は管理者メールに置き換え
+  $in->{email} ||= $config->{mailto};
+
+  # sendmailコマンド
+  my $scmd = "$config->{sendmail} -t -i";
+  if ($config->{sendm_f}) {
+    $scmd .= " -f $in->{email}";
+  }
+
+  # 送信
+  open(MAIL,"| $scmd") or error("送信失敗");
+  print MAIL "To: $config->{mailto}\n";
+  print MAIL "From: $in->{email}\n";
+  print MAIL "Subject: $msub\n";
+  print MAIL "MIME-Version: 1.0\n";
+  print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
+  print MAIL "Content-Transfer-Encoding: 7bit\n";
+  print MAIL "X-Mailer: $config->{version}\n\n";
+  print MAIL "$mbody\n";
+  close(MAIL);
+});
+
+#  エラー処理
+app->helper('aska.err_img' => sub {
+  my $self = shift;
+  
+  # エラー画像
+  my @err = qw{
+    47 49 46 38 39 61 2d 00 0f 00 80 00 00 00 00 00 ff ff ff 2c
+    00 00 00 00 2d 00 0f 00 00 02 49 8c 8f a9 cb ed 0f a3 9c 34
+    81 7b 03 ce 7a 23 7c 6c 00 c4 19 5c 76 8e dd ca 96 8c 9b b6
+    63 89 aa ee 22 ca 3a 3d db 6a 03 f3 74 40 ac 55 ee 11 dc f9
+    42 bd 22 f0 a7 34 2d 63 4e 9c 87 c7 93 fe b2 95 ae f7 0b 0e
+    8b c7 de 02 00 3b
+  };
+
+  print "Content-type: image/gif\n\n";
+  foreach (@err) {
+    print pack('C*', hex($_));
+  }
+});
 
 app->start;
