@@ -8,8 +8,8 @@
 
 <div class="ta-c">
 <hr width="350" />
-<p class="msg">!message!</p>
-<form action="!bbs_cgi!">
+<p class="msg"><%= $message %></p>
+<form action="<%= url_for %>">
 <input type="submit" value="掲示板に戻る" />
 </form>
 <hr width="350" />

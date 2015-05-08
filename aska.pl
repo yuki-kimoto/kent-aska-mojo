@@ -6,10 +6,13 @@ BEGIN { $lib_path = "$FindBin::Bin/extlib/lib/perl5" }
 use lib $lib_path;
 use Mojolicious::Lite;
 use Crypt::RC4;
+use Carp 'croak';
 
 # コンフィグの読み込み
 plugin 'Config';
 my $config = app->config;
+
+my $logfile_abs = app->home->rel_file($config->{logfile});
 
 # テストページ
 get '/test';
@@ -24,10 +27,9 @@ get '/find';
 get '/admin';
 
 # BBS(トップページ )
-get '/' => sub {
+any '/' => sub {
   my $self = shift;
 
-=pod
   # パラメーター
   my $in = {};
   $in->{mode} = $self->param('mode');
@@ -49,7 +51,10 @@ get '/' => sub {
       $in->{pwd}  =~ s|<br />||g;
       $in->{captcha} =~ s|<br />||g;
       $in->{comment} =~ s|(<br />)+$||g;
-
+      
+      # エラー
+      my $error;
+      
       #  禁止ワードチェック
       if ($config->{no_wd}) {
         my $flg;
@@ -59,13 +64,15 @@ get '/' => sub {
             last;
           }
         }
-        if ($flg) { error("禁止ワードが含まれています"); }
+        if ($flg) {
+          $error ||= "禁止ワードが含まれています";
+        }
       }
 
-      # 日本語チェック
+      # 日本語チェック(漢字、ひらがな、カタカナ)
       if ($config->{jp_wd}) {
-        if ($in->{comment} !~ /[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]/) {
-          error("メッセージに日本語が含まれていません");
+        if ($in->{comment} !~ /[\p{Han}\p{Hiragana}\p{Katakana}]/) {
+          $error ||= "メッセージに日本語が含まれていません";
         }
       }
 
@@ -74,7 +81,7 @@ get '/' => sub {
         my $com = $in->{comment};
         my ($num) = ($com =~ s|(https?://)|$1|ig);
         if ($num > $config->{urlnum}) {
-          error("コメント中のURLアドレスは最大$config->{urlnum}個までです");
+          $error ||= "コメント中のURLアドレスは最大$config->{urlnum}個までです";
         }
       }
 
@@ -82,7 +89,7 @@ get '/' => sub {
       if ($config->{use_captcha} > 0) {
         require $config->{captcha_pl};
         if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
-          error("画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください");
+          $error ||= "画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください";
         }
 
         # 投稿キーチェック
@@ -91,9 +98,9 @@ get '/' => sub {
         #  1 : キー一致
         my $chk = cap::check($in->{captcha},$in->{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
         if ($chk == 0) {
-          error("画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください");
+          $error = "画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください";
         } elsif ($chk == -1) {
-          error("画像認証が不正です。<br />投稿フォームに戻って再読込み後再入力してください");
+          $error = "画像認証が不正です。<br />投稿フォームに戻って再読込み後再入力してください";
         }
       }
 
@@ -102,16 +109,18 @@ get '/' => sub {
       $in->{sub} ||= '無題';
 
       # フォーム内容をチェック
-      my $err;
-      if ($in->{name} eq "") { $err .= "名前が入力されていません<br />"; }
-      if ($in->{comment} eq "") { $err .= "コメントが入力されていません<br />"; }
+      if ($in->{name} eq "") {
+        $error ||= "名前が入力されていません<br />";
+      }
+      if ($in->{comment} eq "") {
+        $error ||= "コメントが入力されていません<br />";
+      }
       if ($in->{email} ne '' && $in->{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
-        $err .= "Ｅメールの入力内容が不正です<br />";
+        $error ||= "Ｅメールの入力内容が不正です<br />";
       }
       if ($in->{url} ne '' && $in->{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
-        $err .= "参照先URLの入力内容が不正です<br />";
+        $error ||= "参照先URLの入力内容が不正です<br />";
       }
-      if ($err) { error($err); }
       
       # ホスト取得
       my ($host, $addr) = get_host();
@@ -127,59 +136,72 @@ get '/' => sub {
             $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
       
       # 先頭記事読み取り
-      open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
-      eval "flock(DAT, 2);";
-      my $top = <DAT>;
+      open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
+      flock($dat_fh, 2);;
+      my $top = <$dat_fh>;
       
       # 重複投稿チェック
       my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/,$top);
       if ($in->{name} eq $nam && $in->{comment} eq $com) {
-        close(DAT);
-        error("二重投稿は禁止です");
+        close($dat_fh);
+        $error ||= "二重投稿は禁止です";
       }
 
       # 連続投稿チェック
       my $flg;
       if ($config->{regCtl} == 1) {
-        if ($host eq $hos && $time - $tim < $config->{wait}) { $flg = 1; }
+        if ($host eq $hos && $time - $tim < $config->{wait}) {
+          $flg = 1;
+        }
       } elsif ($config->{regCtl} == 2) {
-        if ($time - $tim < $config->{wait}) { $flg = 1; }
+        if ($time - $tim < $config->{wait}) {
+          $flg = 1;
+        }
       }
       if ($flg) {
-        close(DAT);
-        error("現在投稿制限中です。もうしばらくたってから投稿をお願いします");
+        close($dat_fh);
+        $error ||= error("現在投稿制限中です。もうしばらくたってから投稿をお願いします");
       }
-
-      # 記事No採番
-      $no++;
-
-      # 記事数調整
-      my @data = ($top);
-      my $i = 0;
-      while (<DAT>) {
-        $i++;
-        push(@data,$_);
-
-        last if ($i >= $config->{maxlog}-1);
+      
+      if ($error) {
+        $self->stash(error => $error);
+        $self->render(template => 'error');
+        return;
       }
+      else {
+        # 記事No採番
+        $no++;
 
-      # 更新
-      seek(DAT, 0, 0);
-      print DAT "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
-      print DAT @data;
-      truncate(DAT, tell(DAT));
-      close(DAT);
+        # 記事数調整
+        my @data = ($top);
+        my $i = 0;
+        while (<$dat_fh>) {
+          $i++;
+          push(@data,$_);
 
-      # クッキー格納
-      $self->session(name => $in->{name});
-      $self->session(email => $in->{email});
-      $self->session(url => $in->{url});
+          last if ($i >= $config->{maxlog}-1);
+        }
 
-      # メール通知
-      mail_to($in, $date,$host) if ($config->{mailing} == 1);
+        # 更新
+        seek($dat_fh, 0, 0);
+        print $dat_fh "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
+        print $dat_fh @data;
+        truncate($dat_fh, tell($dat_fh));
+        close($dat_fh);
 
-      # 完了画面
-      message("ありがとうございます。記事を受理しました。");
+        # クッキー格納
+        $self->session(name => $in->{name});
+        $self->session(email => $in->{email});
+        $self->session(url => $in->{url});
+
+        # メール通知
+        mail_to($in, $date,$host) if ($config->{mailing} == 1);
+
+        # 完了画面
+        $self->stash(message => "ありがとうございます。記事を受理しました。");
+        $self->render(template => 'message');
+        return;
+      }
     }
     
     # ユーザー記事削除
@@ -193,9 +215,9 @@ get '/' => sub {
       }
 
       my ($flg,$crypt,@log);
-      open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
-      eval "flock(DAT, 2);";
-      while (<DAT>) {
+      open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
+      flock($dat_fh, 2);;
+      while (<$dat_fh>) {
         my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
 
         if ($in->{num} == $no) {
@@ -207,21 +229,21 @@ get '/' => sub {
       }
 
       if (!$flg or !$crypt) {
-        close(DAT);
+        close($dat_fh);
         error("削除キーが設定されていないか又は記事が見当たりません");
       }
 
       # 削除キーを照合
       if (decrypt($in->{pwd},$crypt) != 1) {
-        close(DAT);
+        close($dat_fh);
         error("認証できません");
       }
 
       # ログ更新
-      seek(DAT, 0, 0);
-      print DAT @log;
-      truncate(DAT, tell(DAT));
-      close(DAT);
+      seek($dat_fh, 0, 0);
+      print $dat_fh @log;
+      truncate($dat_fh, tell($dat_fh));
+      close($dat_fh);
 
       # 完了
       message("記事を削除しました");
@@ -253,9 +275,9 @@ get '/' => sub {
     my @log = search($in->{word},$in->{cond}) if ($in->{word} ne '');
 
     # テンプレート読み込み
-    open(IN,"$config->{tmpldir}/find.html") or error("open err: find.html");
-    my $tmpl = join('', <IN>);
-    close(IN);
+    open(my $in_fh,"$config->{tmpldir}/find.html") or error("open error: find.html");
+    my $tmpl = join('', <$in_fh>);
+    close($in_fh);
 
     # 文字置換
     $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
@@ -295,8 +317,8 @@ get '/' => sub {
   my %res;
   if ($in->{res}) {
     my $flg;
-    open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
-    while (<IN>) {
+    open(my $in_fh,"$logfile_abs") or error("open error: $logfile_abs");
+    while (<$in_fh>) {
       my ($no,$sub,$com) = (split(/<>/))[0,4,5];
       if ($in->{res} == $no) {
         $flg++;
@@ -305,7 +327,7 @@ get '/' => sub {
         last;
       }
     }
-    close(IN);
+    close($in_fh);
 
     if (!$flg) { error("該当記事が見つかりません"); }
 
@@ -321,15 +343,15 @@ get '/' => sub {
 
   # データオープン
   my ($i,@log);
-  open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
-  while (<IN>) {
+  open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
+  while (<$in_fh>) {
     $i++;
     next if ($i < $pg + 1);
     next if ($i > $pg + $config->{pg_max});
 
     push(@log,$_);
   }
-  close(IN);
+  close($in_fh);
 
   # 繰越ボタン作成
   my $page_btn = make_pager($i,$pg);
@@ -351,8 +373,8 @@ get '/' => sub {
     $tmp =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
     print $tmp;
   }
-
-=cut
+  
+  
 
   $self->render(template => 'bbs');
 };
@@ -413,9 +435,9 @@ EOM
 
     # 削除情報をマッチング
     my @data;
-    open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
-    eval "flock(DAT, 2);";
-    while (<DAT>) {
+    open(my $dat_fh,"+< $logfile_abs") or error("open error: $logfile_abs");
+    flock($dat_fh, 2);
+    while (<$dat_fh>) {
       my ($no) = (split(/<>/))[0];
 
       if (!defined($del{$no})) {
@@ -424,17 +446,17 @@ EOM
     }
 
     # 更新
-    seek(DAT, 0, 0);
-    print DAT @data;
-    truncate(DAT, tell(DAT));
-    close(DAT);
+    seek($dat_fh, 0, 0);
+    print $dat_fh @data;
+    truncate($dat_fh, tell($dat_fh));
+    close($dat_fh);
 
   # 修正画面
   } elsif ($in->{job_edit} && $in->{no}) {
 
     my $log;
-    open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
-    while (<IN>) {
+    open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
+    while (<$in_fh>) {
       my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
 
       if ($in->{no} == $no) {
@@ -442,7 +464,7 @@ EOM
         last;
       }
     }
-    close(IN);
+    close($in_fh);
 
     # 修正フォームへ
     {
@@ -508,9 +530,9 @@ EOM
 
     # 読み出し
     my @data;
-    open(DAT,"+< $config->{logfile}") or error("open err: $config->{logfile}");
-    eval "flock(DAT, 2);";
-    while (<DAT>) {
+    open(my $dat_fh,"+< $logfile_abs") or error("open error: $logfile_abs");
+    flock($dat_fh, 2);
+    while (<$dat_fh>) {
       my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pwd,$tim) = split(/<>/);
 
       if ($in->{no} == $no) {
@@ -520,10 +542,10 @@ EOM
     }
 
     # 更新
-    seek(DAT, 0, 0);
-    print DAT @data;
-    truncate(DAT, tell(DAT));
-    close(DAT);
+    seek($dat_fh, 0, 0);
+    print $dat_fh @data;
+    truncate($dat_fh, tell($dat_fh));
+    close($dat_fh);
 
     # 完了メッセージ
     message("記事を修正しました");
@@ -561,8 +583,8 @@ EOM
 
   # 記事を展開
   my $i = 0;
-  open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
-  while (<IN>) {
+  open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
+  while (<$in_fh>) {
     $i++;
     next if ($i < $page + 1);
     last if ($i > $page + $logs);
@@ -574,7 +596,7 @@ EOM
     print qq|[$no] <strong>$sub</strong> 投稿者：<b>$nam</b> 日時：$dat [ <span>$hos</span> ]</div>\n|;
     print qq|<div class="com">| . cut_str($com) . qq|</div>\n|;
   }
-  close(IN);
+  close($in_fh);
 
   print "</dl>\n";
 
@@ -651,9 +673,9 @@ Content-type: text/html; charset=shift_jis
 EOM
 
   # ログファイル
-  if (-f $config->{logfile}) {
+  if (-f $logfile_abs) {
     print "<li>LOGパス : OK\n";
-    if (-r $config->{logfile} && -w $config->{logfile}) {
+    if (-r $logfile_abs && -w $logfile_abs) {
       print "<li>LOGパーミッション : OK\n";
     } else {
       print "<li>LOGパーミッション : NG\n";
@@ -703,8 +725,8 @@ sub search {
 
   # 検索処理
   my @log;
-  open(IN,"$config->{logfile}") or error("open err: $config->{logfile}");
-  while (<IN>) {
+  open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
+  while (<$in_fh>) {
     my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
 
     my $flg;
@@ -720,7 +742,7 @@ sub search {
 
     push(@log,$_);
   }
-  close(IN);
+  close($in_fh);
 
   # 検索結果
   return @log;
@@ -857,9 +879,9 @@ sub decrypt {
 sub message {
   my $msg = shift;
 
-  open(IN,"$config->{tmpldir}/message.html") or error("open err: message.html");
-  my $tmpl = join('', <IN>);
-  close(IN);
+  open(my $in_fh,"$config->{tmpldir}/message.html") or error("open error: message.html");
+  my $tmpl = join('', <$in_fh>);
+  close($in_fh);
 
   $tmpl =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
   $tmpl =~ s/!message!/$msg/g;

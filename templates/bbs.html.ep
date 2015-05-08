@@ -1,21 +1,4 @@
 <%
-=pod
-  # テンプレート読込
-  open(IN,"$config->{tmpldir}/bbs.html") or error("open err: bbs.html");
-  my $tmpl = join('', <IN>);
-  close(IN);
-
-  # 文字置換
-  $tmpl =~ s/!([a-z]+_cgi)!/$config->{$1}/g;
-  $tmpl =~ s/!homepage!/$config->{homepage}/g;
-  $tmpl =~ s/<!-- page_btn -->/$page_btn/g;
-  $tmpl =~ s/!name!/$cookie_name/;
-  $tmpl =~ s/!email!/$cookie_email/;
-  $tmpl =~ s/!url!/$cookie_url/;
-  $tmpl =~ s/!sub!/$res{sub}/;
-  $tmpl =~ s/!comment!/$res{com}/;
-  $tmpl =~ s/!bbs_title!/$config->{bbs_title}/g;
-=cut
 
   # コンフィグ
   my $config = app->config;
@@ -57,8 +40,8 @@
 <hr width="90%" />
 </div>
 <div class="setback">
-<form action="!bbs_cgi!" method="post">
-<input type="hidden" name="mode" value="regist" />
+<form action="<%= url_for %>" method="post">
+<%= hidden_field mode => "regist" %>
 <table class="regfm">
 <tr>
   <th>おなまえ</th>
@@ -105,7 +88,7 @@
 <!--
 <div class="art">
   [<b>!num!</b>] <strong>!sub!</strong>
-  投稿者：<b>!name!</b> 投稿日：!date! &nbsp; [<a href="!bbs_cgi!?res=!num!">返信</a>]
+  投稿者：<b>!name!</b> 投稿日：!date! &nbsp; [<a href="<%= url_for->query(res => '!num!') %>">返信</a>]
   <div class="com">!comment!</div>
 </div>
 -->
@@ -113,7 +96,7 @@
 <div class="art-end"></div>
 
 <div class="ta-c">
-<form action="!bbs_cgi!" method="post">
+<form action="<%= url_for %>" method="post">
 <input type="hidden" name="mode" value="dele" />
 記事No<input type="text" name="num" size="3" />
 削除キー<input type="password" name="pwd" size="4" maxlength="8" />
