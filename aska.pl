@@ -10,9 +10,6 @@ use Crypt::RC4;
 
 # コンフィグの読み込み
 plugin 'Config';
-my $config = app->config;
-
-my $logfile_abs = app->home->rel_file($config->{logfile});
 
 # ヘルパー定義
 # 自動リンク
@@ -26,6 +23,8 @@ app->helper('aska.autolink' => sub {
 #  アクセス制限
 app->helper('aska.get_host' => sub {
   my $self = shift;
+  
+  my $config = $self->app->config;
   
   # IP&ホスト取得
   my $host = $ENV{REMOTE_HOST};
@@ -88,6 +87,8 @@ app->helper('aska.decrypt' => sub {
 # ページ送り作成
 app->helper('aska.make_pager' => sub {
   my ($self, $i,$pg) = @_;
+  
+  my $config = $self->app->config;
 
   # ページ繰越数定義
   $config->{pg_max} ||= 10;
@@ -130,6 +131,8 @@ app->helper('aska.make_pager' => sub {
 #  認証画像作成 [ライブラリ版]
 app->helper('aska.load_pngren' => sub {
   my ($self, $plain, $sipng) = @_;
+  
+  my $config = $self->app->config;
 
   # 数字
   my @img = split(//, $plain);
@@ -142,15 +145,136 @@ app->helper('aska.load_pngren' => sub {
 #  復号
 app->helper('aska.decrypt_' => sub {
   my ($self, $caplen, $buf) = @_;
+  
+  my $config = $self->app->config;
 
   # 復号
   $buf =~ s/N/\n/g;
   $buf =~ s/([0-9A-Fa-f]{2})/pack('H2', $1)/eg;
-  my $plain = Crypt::RC4( $config->{captcha_key}, $buf );
+  my $plain = Crypt::RC4::RC4( $config->{captcha_key}, $buf );
 
   # 先頭の数字を抽出
   $plain =~ s/^(\d{$caplen}).*/$1/ or &err_img;
   return $plain;
+});
+
+app->helper('aska.search' => sub {
+  my ($self, $word,$cond) = @_;
+  
+  my $config = $self->app->config;
+
+  # キーワードを配列化
+  $word =~ s/\x81\x40/ /g;
+  my @wd = split(/\s+/,$word);
+
+  # キーワード検索準備（Shift-JIS定義）
+  my $ascii = '[\x00-\x7F]';
+  my $hanka = '[\xA1-\xDF]';
+  my $kanji = '[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]';
+
+  # 検索処理
+  my @log;
+  my $logfile_abs = app->home->rel_file($config->{logfile});
+  open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
+  while (<$in_fh>) {
+    my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
+
+    my $flg;
+    foreach my $wd (@wd) {
+      if ("$nam $eml $sub $com $url" =~ /^(?:$ascii|$hanka|$kanji)*?\Q$wd\E/i) {
+        $flg++;
+        if ($cond == 0) { last; }
+      } else {
+        if ($cond == 1) { $flg = 0; last; }
+      }
+    }
+    next if (!$flg);
+
+    push(@log,$_);
+  }
+  close($in_fh);
+
+  # 検索結果
+  return @log;
+});
+
+app->helper('aska.mail_to' => sub {
+
+  my ($self, $in, $date,$host) = @_;
+  
+  my $config = $self->app->config;
+
+  # 件名をMIMEエンコード
+  if ($config->{chg_code} == 0) { require Jcode; }
+  my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
+
+  # コメント内の改行復元
+  my $com = $in->{comment};
+  $com =~ s/<br>/\n/g;
+  $com =~ s/&lt;/>/g;
+  $com =~ s/&gt;/</g;
+  $com =~ s/&quot;/"/g;
+  $com =~ s/&amp;/&/g;
+  $com =~ s/&#39;/'/g;
+
+  # メール本文を定義
+  my $mbody = <<EOM;
+掲示板に投稿がありました。
+
+投稿日：$date
+ホスト：$host
+
+件名  ：$in->{sub}
+お名前：$in->{name}
+E-mail：$in->{email}
+URL   ：$in->{url}
+
+$com
+EOM
+
+  # JISコード変換
+  $mbody = Jcode->new($mbody,'sjis')->jis;
+
+  # メールアドレスがない場合は管理者メールに置き換え
+  $in->{email} ||= $config->{mailto};
+
+  # sendmailコマンド
+  my $scmd = "$config->{sendmail} -t -i";
+  if ($config->{sendm_f}) {
+    $scmd .= " -f $in->{email}";
+  }
+
+  # 送信
+  open(MAIL,"| $scmd") or error("送信失敗");
+  print MAIL "To: $config->{mailto}\n";
+  print MAIL "From: $in->{email}\n";
+  print MAIL "Subject: $msub\n";
+  print MAIL "MIME-Version: 1.0\n";
+  print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
+  print MAIL "Content-Transfer-Encoding: 7bit\n";
+  print MAIL "X-Mailer: $config->{version}\n\n";
+  print MAIL "$mbody\n";
+  close(MAIL);
+});
+
+#  エラー処理
+app->helper('aska.err_img' => sub {
+  my $self = shift;
+  
+  # エラー画像
+  my @err = qw{
+    47 49 46 38 39 61 2d 00 0f 00 80 00 00 00 00 00 ff ff ff 2c
+    00 00 00 00 2d 00 0f 00 00 02 49 8c 8f a9 cb ed 0f a3 9c 34
+    81 7b 03 ce 7a 23 7c 6c 00 c4 19 5c 76 8e dd ca 96 8c 9b b6
+    63 89 aa ee 22 ca 3a 3d db 6a 03 f3 74 40 ac 55 ee 11 dc f9
+    42 bd 22 f0 a7 34 2d 63 4e 9c 87 c7 93 fe b2 95 ae f7 0b 0e
+    8b c7 de 02 00 3b
+  };
+
+  print "Content-type: image/gif\n\n";
+  foreach (@err) {
+    print pack('C*', hex($_));
+  }
 });
 
 # テストページ
@@ -168,6 +292,8 @@ get '/admin';
 # BBS(トップページ )
 any '/' => sub {
   my $self = shift;
+  
+  my $config = $self->app->config;
 
   # パラメーター
   my $in = {};
@@ -275,6 +401,7 @@ any '/' => sub {
             $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
       
       # 先頭記事読み取り
+      my $logfile_abs = app->home->rel_file($config->{logfile});
       open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
       flock($dat_fh, 2);;
       my $top = <$dat_fh>;
@@ -334,7 +461,7 @@ any '/' => sub {
         $self->session(url => $in->{url});
 
         # メール通知
-        mail_to($in, $date,$host) if ($config->{mailing} == 1);
+        $self->aska->mail_to($in, $date,$host) if ($config->{mailing} == 1);
 
         # 完了画面
         $self->stash(message => "ありがとうございます。記事を受理しました。");
@@ -354,6 +481,7 @@ any '/' => sub {
       }
 
       my ($flg,$crypt,@log);
+      my $logfile_abs = app->home->rel_file($config->{logfile});
       open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
       flock($dat_fh, 2);;
       while (<$dat_fh>) {
@@ -411,7 +539,7 @@ any '/' => sub {
 
     # 検索実行
     $in->{word} = Jcode->new($in->{word})->sjis if ($config->{chg_code} == 1);
-    my @log = search($in->{word},$in->{cond}) if ($in->{word} ne '');
+    my @log = $self->aska->search($in->{word},$in->{cond}) if ($in->{word} ne '');
 
     # テンプレート読み込み
     open(my $in_fh,"$config->{tmpldir}/find.html") or error("open error: find.html");
@@ -456,6 +584,7 @@ any '/' => sub {
   my %res;
   if ($in->{res}) {
     my $flg;
+    my $logfile_abs = app->home->rel_file($config->{logfile});
     open(my $in_fh,"$logfile_abs") or error("open error: $logfile_abs");
     while (<$in_fh>) {
       my ($no,$sub,$com) = (split(/<>/))[0,4,5];
@@ -482,6 +611,7 @@ any '/' => sub {
 
   # データオープン
   my ($i,@log);
+  my $logfile_abs = app->home->rel_file($config->{logfile});
   open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
   while (<$in_fh>) {
     $i++;
@@ -513,13 +643,13 @@ any '/' => sub {
     print $tmp;
   }
   
-  
-
   $self->render(template => 'bbs');
 };
 
 get '/admin' => sub {
   my $self = shift;
+  
+  my $config = $self->app->config;
 
   # データ受理
   my $in = {};
@@ -574,6 +704,7 @@ EOM
 
     # 削除情報をマッチング
     my @data;
+    my $logfile_abs = app->home->rel_file($config->{logfile});
     open(my $dat_fh,"+< $logfile_abs") or error("open error: $logfile_abs");
     flock($dat_fh, 2);
     while (<$dat_fh>) {
@@ -594,6 +725,7 @@ EOM
   } elsif ($in->{job_edit} && $in->{no}) {
 
     my $log;
+    my $logfile_abs = app->home->rel_file($config->{logfile});
     open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
     while (<$in_fh>) {
       my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
@@ -669,6 +801,7 @@ EOM
 
     # 読み出し
     my @data;
+    my $logfile_abs = app->home->rel_file($config->{logfile});
     open(my $dat_fh,"+< $logfile_abs") or error("open error: $logfile_abs");
     flock($dat_fh, 2);
     while (<$dat_fh>) {
@@ -722,6 +855,7 @@ EOM
 
   # 記事を展開
   my $i = 0;
+  my $logfile_abs = app->home->rel_file($config->{logfile});
   open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
   while (<$in_fh>) {
     $i++;
@@ -759,6 +893,8 @@ EOM
 
 get '/captcha' => sub {
   my $self = shift;
+  
+  my $config = $self->app->config;
 
   # パラメータ受け取り
   my $buf = $self->param('crypt');
@@ -797,6 +933,8 @@ get '/captcha' => sub {
 
 get '/check' => sub {
   my $self = shift;
+  
+  my $config = $self->app->config;
 
   print <<EOM;
 Content-type: text/html; charset=shift_jis
@@ -812,6 +950,7 @@ Content-type: text/html; charset=shift_jis
 EOM
 
   # ログファイル
+  my $logfile_abs = app->home->rel_file($config->{logfile});
   if (-f $logfile_abs) {
     print "<li>LOGパス : OK\n";
     if (-r $logfile_abs && -w $logfile_abs) {
@@ -847,123 +986,5 @@ EOM
 EOM
 
 };
-
-{
-  package Aska::Util;
-  use strict;
-  use warnings;
-  
-  sub search {
-    my ($word,$cond) = @_;
-
-    # キーワードを配列化
-    $word =~ s/\x81\x40/ /g;
-    my @wd = split(/\s+/,$word);
-
-    # キーワード検索準備（Shift-JIS定義）
-    my $ascii = '[\x00-\x7F]';
-    my $hanka = '[\xA1-\xDF]';
-    my $kanji = '[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]';
-
-    # 検索処理
-    my @log;
-    open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
-    while (<$in_fh>) {
-      my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
-
-      my $flg;
-      foreach my $wd (@wd) {
-        if ("$nam $eml $sub $com $url" =~ /^(?:$ascii|$hanka|$kanji)*?\Q$wd\E/i) {
-          $flg++;
-          if ($cond == 0) { last; }
-        } else {
-          if ($cond == 1) { $flg = 0; last; }
-        }
-      }
-      next if (!$flg);
-
-      push(@log,$_);
-    }
-    close($in_fh);
-
-    # 検索結果
-    return @log;
-  }
-
-  sub mail_to {
-
-    my ($in, $date,$host) = @_;
-
-    # 件名をMIMEエンコード
-    if ($config->{chg_code} == 0) { require Jcode; }
-    my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
-
-    # コメント内の改行復元
-    my $com = $in->{comment};
-    $com =~ s/<br>/\n/g;
-    $com =~ s/&lt;/>/g;
-    $com =~ s/&gt;/</g;
-    $com =~ s/&quot;/"/g;
-    $com =~ s/&amp;/&/g;
-    $com =~ s/&#39;/'/g;
-
-    # メール本文を定義
-    my $mbody = <<EOM;
-  掲示板に投稿がありました。
-
-  投稿日：$date
-  ホスト：$host
-
-  件名  ：$in->{sub}
-  お名前：$in->{name}
-  E-mail：$in->{email}
-  URL   ：$in->{url}
-
-  $com
-EOM
-
-    # JISコード変換
-    $mbody = Jcode->new($mbody,'sjis')->jis;
-
-    # メールアドレスがない場合は管理者メールに置き換え
-    $in->{email} ||= $config->{mailto};
-
-    # sendmailコマンド
-    my $scmd = "$config->{sendmail} -t -i";
-    if ($config->{sendm_f}) {
-      $scmd .= " -f $in->{email}";
-    }
-
-    # 送信
-    open(MAIL,"| $scmd") or error("送信失敗");
-    print MAIL "To: $config->{mailto}\n";
-    print MAIL "From: $in->{email}\n";
-    print MAIL "Subject: $msub\n";
-    print MAIL "MIME-Version: 1.0\n";
-    print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
-    print MAIL "Content-Transfer-Encoding: 7bit\n";
-    print MAIL "X-Mailer: $config->{version}\n\n";
-    print MAIL "$mbody\n";
-    close(MAIL);
-  }
-
-  #  エラー処理
-  sub err_img {
-    # エラー画像
-    my @err = qw{
-      47 49 46 38 39 61 2d 00 0f 00 80 00 00 00 00 00 ff ff ff 2c
-      00 00 00 00 2d 00 0f 00 00 02 49 8c 8f a9 cb ed 0f a3 9c 34
-      81 7b 03 ce 7a 23 7c 6c 00 c4 19 5c 76 8e dd ca 96 8c 9b b6
-      63 89 aa ee 22 ca 3a 3d db 6a 03 f3 74 40 ac 55 ee 11 dc f9
-      42 bd 22 f0 a7 34 2d 63 4e 9c 87 c7 93 fe b2 95 ae f7 0b 0e
-      8b c7 de 02 00 3b
-    };
-
-    print "Content-type: image/gif\n\n";
-    foreach (@err) {
-      print pack('C*', hex($_));
-    }
-  }
-}
 
 app->start;
