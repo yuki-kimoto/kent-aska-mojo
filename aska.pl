@@ -431,7 +431,7 @@ any '/' => sub {
       
       if ($error) {
         $self->stash(error => $error);
-        $self->render(template => 'error');
+        $self->render(template => 'bbs');
         return;
       }
       else {
@@ -465,7 +465,7 @@ any '/' => sub {
 
         # 完了画面
         $self->stash(message => "ありがとうございます。記事を受理しました。");
-        $self->render(template => 'message');
+        $self->render(template => 'bbs');
         return;
       }
     }
