@@ -1,11 +1,16 @@
 #!/usr/bin/env
 
 use FindBin;
-use lib "$FindBin::Bin/extlib/perl5/lib";
+use lib "$FindBin::Bin/extlib/lib/perl5";
 use Mojolicious::Lite;
 use Crypt::RC4;
 
+plugin 'Config';
+
 my $config = app->config;
+
+get '/note';
+get '/test';
 
 get '/' => sub {
   my $self = shift;

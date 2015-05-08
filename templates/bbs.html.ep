@@ -1,3 +1,10 @@
+<%
+  my $homepage = config->{homepage};
+  my $bbs_title = config->{bbs_title};
+  
+  warn $homepage;
+%>
+
 <?xml version="1.0" encoding="Shift_JIS"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja" lang="ja">
@@ -14,14 +21,16 @@ function popup(url) {
 }
 // -->
 </script>
-<title>!bbs_title!</title>
+<title><%= $bbs_title %></title>
 </head>
 <body>
+<%= include '/include/header' %>
+
 <div align="center">
-<h1>!bbs_title!</h1>
+<h1><%= $bbs_title %></h1>
 <hr width="90%" />
-[<a href="!homepage!" target="_top">トップに戻る</a>]
-[<a href="!bbs_cgi!?mode=note" target="note" onclick="popup('!bbs_cgi!?mode=note')">留意事項</a>]
+[<a href="<%= url_for($homepage) %>" target="_top">トップに戻る</a>]
+[<a href="<%= url_for('/note') %>" target="note" onclick="popup('/note')">留意事項</a>]
 [<a href="!bbs_cgi!?mode=find">ワード検索</a>]
 [<a href="!admin_cgi!">管理用</a>]
 <hr width="90%" />
@@ -91,5 +100,7 @@ function popup(url) {
 <input type="submit" value="削除" />
 </form>
 </div>
+<%= include '/include/footer' %>
+
 </body>
 </html>
