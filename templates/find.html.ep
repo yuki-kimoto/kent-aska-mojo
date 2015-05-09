@@ -1,33 +1,71 @@
 <%
-  # スタッシュ
-  stash title => 'ワード検索';
+  my $in = {};
+  
+  # ワード検索
+  my $cond = param('cond');
+  my $word = param('word');
+  
+  # 条件
+  $cond =~ s/\D//g;
+  $word =~ s|<br />||g;
+  
+  # 検索実行
+  my @lines;
+  if ($word ne '') {
+    @lines = $self->aska->search($word, $cond);
+  }
 
+  # ループ部
+  my $rows = [];
+  for my $line (@lines) {
+    my ($no,$date,$name,$eml,$sub,$com,$url) = split(/<>/, $line);
+    $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
+    $com  = $self->aska->autolink($com) if ($config->{autolink});
+    $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
+    $url  = qq|<a href="$url" target="_blank">$url</a>| if ($url);
+    
+    my $row = {
+      no => $no,
+      date => $date,
+      name => $name,
+      eml => $eml,
+      sub => $sub,
+      com => $com,
+      url => $url
+    };
+    
+    push @$rows, $row;
+  }
+  
   # レイアウト
-  layout 'common';
+  layout 'common', title => 'ワード検索';
 %>
 
-[<a href="!bbs_cgi!">戻る</a>]
+[<a href="<%= url_for('/') %>">戻る</a>]
 <div class="obi">ワード検索</div>
 
 <ul>
-<li>検索したい<b>キーワード</b>を入力し「検索」ボタンを押してください。</li>
-<li>キーワードはスペースで区切って複数指定することができます。
-<form action="!bbs_cgi!" method="get">
-<input type="hidden" name="mode" value="find" />
-キーワード <input type="text" name="word" size="30" value="!word!" />
-条件 <select name="cond">
-<!-- op_cond -->
-</select>
-<input type="submit" value=" 検索 " />
-</form></li>
+  <li>
+    検索したい<b>キーワード</b>を入力し「検索」ボタンを押してください。
+  </li>
+  <li>
+    キーワードはスペースで区切って複数指定することができます。
+    <form>
+      キーワード <%= text_field 'word', size => '30' %>
+      条件
+      <%= select_field cond => [['AND' => 1], ['OR' => 0]] %> 
+      <%= submit_button "検索" %>
+    </form>
+  </li>
 </ul>
 
 <div class="ta-c">
 
-<!-- loop_begin -->
-<div class="note">
-  <b class="subcol">!sub!</b> 投稿者：<b>!name!</b> 投稿日：!date! !home!<br />
-  <p>!comment!</p>
-</div>
-<!-- loop_end -->
+% for my $row (@$rows) {
+  <div class="note">
+    <b class="subcol"><%= $row->{sub} %></b> 投稿者：<b><%= $row->{name} %></b> 投稿日：<%= $row->{date} %> <%= $row->{home} %><br />
+    <p><%= $row->{com} %></p>
+  </div>
+% }
+
 </div>

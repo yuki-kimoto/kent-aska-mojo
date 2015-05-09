@@ -7,6 +7,7 @@ use lib $lib_path;
 use Mojolicious::Lite;
 use Carp 'croak';
 use Crypt::RC4;
+use Encode ();
 
 # コンフィグの読み込み
 plugin 'Config';
@@ -515,29 +516,26 @@ app->helper('aska.decrypt_' => sub {
 });
 
 app->helper('aska.search' => sub {
-  my ($self, $word,$cond) = @_;
+  my ($self, $word, $cond) = @_;
   
   my $config = $self->app->config;
 
   # キーワードを配列化
-  $word =~ s/\x81\x40/ /g;
-  my @wd = split(/\s+/,$word);
-
-  # キーワード検索準備（Shift-JIS定義）
-  my $ascii = '[\x00-\x7F]';
-  my $hanka = '[\xA1-\xDF]';
-  my $kanji = '[\x81-\x9F\xE0-\xFC][\x40-\x7E\x80-\xFC]';
-
+  my @wd = split(/\s+/, $word);
+  
   # 検索処理
   my @log;
   my $logfile_abs = app->home->rel_file($config->{logfile});
-  open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
-  while (<$in_fh>) {
-    my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
-
+  open(my $in_fh, $logfile_abs) or croak("open error: $logfile_abs");
+  while (my $line = <$in_fh>) {
+    $line = Encode::decode('UTF-8', $line);
+    my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/, $line);
+    
     my $flg;
     foreach my $wd (@wd) {
-      if ("$nam $eml $sub $com $url" =~ /^(?:$ascii|$hanka|$kanji)*?\Q$wd\E/i) {
+      $wd = quotemeta $wd;
+      print $wd;
+      if ("$nam $eml $sub $com $url" =~ /$wd/i) {
         $flg++;
         if ($cond == 0) { last; }
       } else {
@@ -546,7 +544,7 @@ app->helper('aska.search' => sub {
     }
     next if (!$flg);
 
-    push(@log,$_);
+    push(@log,$line);
   }
   close($in_fh);
 
