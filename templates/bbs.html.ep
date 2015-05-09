@@ -1,4 +1,6 @@
 <%
+  use Encode ();
+  
   my $config = app->config;
 
   # パラメーター
@@ -13,6 +15,7 @@
   my $message;
   my $error;
   my $title;
+  my $rows;
   
   if (lc $self->req->method eq 'post') {
     # 記事投稿
@@ -148,17 +151,23 @@
         # 記事数調整
         my @data = ($top);
         my $i = 0;
-        while (<$dat_fh>) {
+        while (my $line = <$dat_fh>) {
+          $line = Encode::decode('UTF-8', $line);
           $i++;
-          push(@data,$_);
+          push(@data,$line);
 
           last if ($i >= $config->{maxlog}-1);
         }
 
         # 更新
         seek($dat_fh, 0, 0);
-        print $dat_fh "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
-        print $dat_fh @data;
+        my $new_line = "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
+        $new_line = Encode::encode('UTF-8', $new_line);
+        print $dat_fh $new_line;
+        for my $line (@data) {
+          $line = Encode::encode('UTF-8', $line);
+          print $dat_fh $line;
+        }
         truncate($dat_fh, tell($dat_fh));
         close($dat_fh);
 
@@ -189,15 +198,17 @@
       my $logfile_abs = app->home->rel_file($config->{logfile});
       open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
       flock($dat_fh, 2);;
-      while (<$dat_fh>) {
-        my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/);
+      while (my $line = <$dat_fh>) {
+        $line = Encode::decode('UTF-8', $line);
+
+        my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/, $line);
 
         if ($in->{num} == $no) {
           $flg++;
           $crypt = $pw;
           next;
         }
-        push(@log,$_);
+        push(@log,$line);
       }
 
       if (!$flg or !$crypt) {
@@ -213,7 +224,10 @@
 
       # ログ更新
       seek($dat_fh, 0, 0);
-      print $dat_fh @log;
+      for my $l (@log) {
+        $l = Encode::encode('UTF-8', $l);
+        print $dat_fh $l;
+      }
       truncate($dat_fh, tell($dat_fh));
       close($dat_fh);
 
@@ -260,10 +274,6 @@
       my ($head,$loop,$foot) = $tmpl =~ /(.+)<!-- loop_begin -->(.+)<!-- loop_end -->(.+)/s
           ? ($1,$2,$3) : error("テンプレート不正");
 
-      # ヘッダ部
-      print "Content-type: text/html; charset=shift_jis\n\n";
-      print $head;
-
       # ループ部
       foreach (@log) {
         my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
@@ -271,14 +281,6 @@
         $com  = $self->aska->autolink($com) if ($config->{autolink});
         $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
         $url  = qq|<a href="$url" target="_blank">$url</a>| if ($url);
-
-        my $tmp = $loop;
-        $tmp =~ s/!sub!/$sub/g;
-        $tmp =~ s/!date!/$date/g;
-        $tmp =~ s/!name!/$name/g;
-        $tmp =~ s/!home!/$url/g;
-        $tmp =~ s/!comment!/$com/g;
-        print $tmp;
       }
     }
     else {
@@ -291,8 +293,9 @@
         my $flg;
         my $logfile_abs = app->home->rel_file($config->{logfile});
         open(my $in_fh,"$logfile_abs") or error("open error: $logfile_abs");
-        while (<$in_fh>) {
-          my ($no,$sub,$com) = (split(/<>/))[0,4,5];
+        while (my $line = <$in_fh>) {
+          $line = Encode::decode('UTF-8', $line);
+          my ($no,$sub,$com) = (split(/<>/, $line))[0,4,5];
           if ($in->{res} == $no) {
             $flg++;
             $res{sub} = $sub;
@@ -318,12 +321,13 @@
       my ($i,@log);
       my $logfile_abs = app->home->rel_file($config->{logfile});
       open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
-      while (<$in_fh>) {
+      while (my $line = <$in_fh>) {
+        $line = Encode::decode('UTF-8', $line);
         $i++;
         next if ($i < $pg + 1);
         next if ($i > $pg + $config->{pg_max});
-
-        push(@log,$_);
+        
+        push(@log, $line);
       }
       close($in_fh);
 
@@ -331,21 +335,25 @@
       my $page_btn = $self->aska->make_pager($i,$pg);
 
       # ループ部
-      foreach (@log) {
-        my ($no,$date,$name,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
+      $rows = [];
+      for my $line (@log) {
+        my ($no, $date, $name, $eml, $sub, $com, $url) = split(/<>/, $line);
         $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
         $com = $self->aska->autolink($com) if ($config->{autolink});
         $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
         $com .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
-
-        my $tmp = 'bbs body'; # 一時書き換え
-        $tmp =~ s/!num!/$no/g;
-        $tmp =~ s/!sub!/$sub/g;
-        $tmp =~ s/!name!/$name/g;
-        $tmp =~ s/!date!/$date/g;
-        $tmp =~ s/!comment!/$com/g;
-        $tmp =~ s/!bbs_cgi!/$config->{bbs_cgi}/g;
-        print $tmp;
+        
+        my $row = {
+          no => $no,
+          date => $date,
+          name => $name,
+          eml => $eml,
+          sub => $sub,
+          com => $com,
+          url => $url
+        };
+        
+        push @$rows, $row;
       }
 
       # コンフィグ
@@ -394,68 +402,69 @@
   <hr width="90%" />
   </div>
   <div class="setback">
-  <form action="<%= url_for %>" method="post">
-  <%= hidden_field mode => "regist" %>
-  <table class="regfm">
-  <tr>
-    <th>おなまえ</th>
-    <td><input type="text" name="name" size="30" value="<%= session 'name' // '' %>" /></td>
-  </tr><tr>
-    <th>Ｅメール</th>
-    <td><input type="text" name="email" size="30" value="<%= session 'email' // '' %>" /></td>
-  </tr><tr>
-    <th>タイトル</th>
-    <td>
-        <input type="text" name="sub" size="36" value="<%= session 'sub' // ''  %>" />
-        <input type="submit" value="送信する" /><input type="reset" value="リセット" />
-    </td>
-  </tr><tr>
-    <th colspan="2">
-        メッセージ<br />
-        <textarea name="comment" cols="60" rows="7"><%= session 'comment' // '' %></textarea>
-    </th>
-  </tr><tr>
-    <th>参照先</th>
-    <td><input type="text" name="url" size="50" value="<%= session 'url' // 'http://' %>" /></td>
-  </tr><tr>
-    <th>削除キー</th>
-    <td class="small">
-        <input type="password" name="pwd" size="8" maxlength="8" />
-      （英数字で8文字以内）&nbsp;
-      <input type="checkbox" name="cookie" value="1" checked="checked" /> クッキー情報保存
-    </td>
+    <form action="<%= url_for %>" method="post">
+      <%= hidden_field mode => "regist" %>
+      <table class="regfm">
+      <tr>
+        <th>おなまえ</th>
+        <td><input type="text" name="name" size="30" value="<%= session 'name' // '' %>" /></td>
+      </tr><tr>
+        <th>Ｅメール</th>
+        <td><input type="text" name="email" size="30" value="<%= session 'email' // '' %>" /></td>
+      </tr><tr>
+        <th>タイトル</th>
+        <td>
+            <input type="text" name="sub" size="36" value="<%= session 'sub' // ''  %>" />
+            <input type="submit" value="送信する" /><input type="reset" value="リセット" />
+        </td>
+      </tr><tr>
+        <th colspan="2">
+            メッセージ<br />
+            <textarea name="comment" cols="60" rows="7"><%= session 'comment' // '' %></textarea>
+        </th>
+      </tr><tr>
+        <th>参照先</th>
+        <td><input type="text" name="url" size="50" value="<%= session 'url' // 'http://' %>" /></td>
+      </tr><tr>
+        <th>削除キー</th>
+        <td class="small">
+            <input type="password" name="pwd" size="8" maxlength="8" />
+          （英数字で8文字以内）&nbsp;
+          <input type="checkbox" name="cookie" value="1" checked="checked" /> クッキー情報保存
+        </td>
 
-  % if ($use_captcha) {
-    </tr><tr>
-      <th>画像認証</th>
-      <td class="small">
-        <input type="text" name="captcha" size="8" style="ime-mode:inactive" maxlength="8" />
-        （右画像の数字を入力） <img src="<%= url_for("/captcha")->query(crypt => $str_crypt) %>" class="capt" alt="投稿キー" />
-        <input type="hidden" name="str_crypt" value="<%= $str_crypt %>" />
-      </td>
-  % }
-  </tr>
-  </table>
-  </form>
-  </div>
+      % if ($use_captcha) {
+        </tr><tr>
+          <th>画像認証</th>
+          <td class="small">
+            <input type="text" name="captcha" size="8" style="ime-mode:inactive" maxlength="8" />
+            （右画像の数字を入力） <img src="<%= url_for("/captcha")->query(crypt => $str_crypt) %>" class="capt" alt="投稿キー" />
+            <input type="hidden" name="str_crypt" value="<%= $str_crypt %>" />
+          </td>
+      % }
+      </tr>
+      </table>
+      </form>
+    </div>
 
-  <!--
-  <div class="art">
-    [<b>!num!</b>] <strong>!sub!</strong>
-    投稿者：<b>!name!</b> 投稿日：!date! &nbsp; [<a href="<%= url_for->query(res => '!num!') %>">返信</a>]
-    <div class="com">!comment!</div>
-  </div>
-  -->
-
-  <div class="art-end"></div>
-
-  <div class="ta-c">
-  <form action="<%= url_for %>" method="post">
-  <input type="hidden" name="mode" value="dele" />
-  記事No<input type="text" name="num" size="3" />
-  削除キー<input type="password" name="pwd" size="4" maxlength="8" />
-  <input type="submit" value="削除" />
-  </form>
+    % for my $row (@$rows) {
+      <div class="art">
+        [<b><%= $row->{no} %></b>] <strong><%= $row->{sub} %></strong>
+        投稿者：<b><%= $row->{name} %></b> 投稿日：<%= $row->{date} %> &nbsp; [<a href="<%= url_for->query(res => $row->{no}) %>">返信</a>]
+        <div class="com"><%= $row->{com} %></div>
+      </div>
+    % }
+    
+    <div class="art-end"></div>
+    
+    <div class="ta-c">
+      <form action="<%= url_for %>" method="post">
+        <input type="hidden" name="mode" value="dele" />
+        記事No<input type="text" name="num" size="3" />
+        削除キー<input type="password" name="pwd" size="4" maxlength="8" />
+        <input type="submit" value="削除" />
+      </form>
+    </div>
   </div>
 % }
 
