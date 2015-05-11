@@ -3,21 +3,25 @@
 
   # データ受理
   my $in = {};
-  $in->{pass} = $self->param('pass');
-  $in->{job_edit} = $self->param('job_edit');
-  $in->{job_dele} = $self->param('job_dele');
-  $in->{job} = $self->param('job');
-  $in->{no} = $self->param('no');
+  $in->{pass} = param('pass');
+  $in->{job_edit} = param('job_edit');
+  $in->{job_dele} = param('job_dele');
+  $in->{job} = param('job');
+  $in->{no} = param('no');
 
   # テンプレートで使う変数
   my $error;
+  my $message;
   my $title;
+  my $entry;
   my $entries = [];
   my $back;
   my $next;
+  my $no;
+  my $pass = $in->{pass};
   
   # パスワード認証
-  if ($in->{pass} && $in->{pass} ne $config->{password}) {
+  if ($pass && $pass ne $config->{password}) {
     $error = '認証できません';
   }
   else {
@@ -27,106 +31,76 @@
     if ($in->{job_dele} && $in->{no}) {
 
       # 削除情報
-      my %del;
-      foreach ( split(/\0/,$in->{no}) ) {
-        $del{$_}++;
-      }
+      my %del = map { $_ => 1} @{$self->every_param('no')};
 
       # 削除情報をマッチング
       my @data;
       my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $dat_fh,"+< $logfile_abs") or error("open error: $logfile_abs");
+      open(my $dat_fh,"+< $logfile_abs") or Carp::croak("open error: $logfile_abs");
       flock($dat_fh, 2);
-      while (<$dat_fh>) {
-        my ($no) = (split(/<>/))[0];
+      while (my $line = <$dat_fh>) {
+        $line = Encode::decode('UTF-8', $line);
+        my ($no) = (split(/<>/, $line))[0];
 
         if (!defined($del{$no})) {
-          push(@data,$_);
+          push(@data,$line);
         }
       }
 
       # 更新
       seek($dat_fh, 0, 0);
-      # print $dat_fh @data;
+      for my $d (@data) {
+        $d = Encode::encode('UTF-8', $d);
+        print $dat_fh $d;
+      }
       truncate($dat_fh, tell($dat_fh));
       close($dat_fh);
 
+    }
     # 修正画面
-    } elsif ($in->{job_edit} && $in->{no}) {
-
+    elsif ($in->{job_edit} && $in->{no}) {
+      warn "aaaaaaaaaaaaaaaaaaaaaa $in->{no}";
       my $log;
       my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
-      while (<$in_fh>) {
-        my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/);
-
+      open(my $in_fh, $logfile_abs) or Carp::croak("open error: $logfile_abs");
+      while (my $line = <$in_fh>) {
+        $line = Encode::decode('UTF-8', $line);
+        my ($no,$dat,$nam,$eml,$sub,$com,$url) = split(/<>/, $line);
+        
         if ($in->{no} == $no) {
-          $log = $_;
+          $log = $line;
           last;
         }
       }
       close($in_fh);
+      
+      warn "bbbbbbbbbbbbbbbbbbbbbb $log";
 
       # 修正フォームへ
-      {
-        my ($no,$dat,$nam,$eml,$sub,$com,$url,undef,undef,undef) = split(/<>/,$log);
+      my ($no,$date,$name,$eml,$sub,$com,$url) = split(/<>/, $log);
 
-        $com =~ s|<br( /)?>|\n|g;
-        $url ||= "http://";
-
-=pod
-        # header("管理モード ＞ 修正フォーム");
-        print <<EOM;
-      <div align="right">
-      <form action="$config->{admin_cgi}" method="post">
-      <input type="hidden" name="mode" value="admin">
-      <input type="hidden" name="pass" value="$in->{pass}">
-      <input type="submit" value="&lt; 前画面">
-      </form>
-      </div>
-      <div class="ttl">■ 編集フォーム</div>
-      <ul>
-      <li>変更する部分のみ修正して送信ボタンを押してください。
-      </ul>
-      <form action="$config->{admin_cgi}" method="post">
-      <input type="hidden" name="mode" value="admin">
-      <input type="hidden" name="job" value="edit">
-      <input type="hidden" name="no" value="$no">
-      <input type="hidden" name="pass" value="$in->{pass}">
-      <table class="form-tbl">
-      <tr>
-        <th>おなまえ</th>
-        <td><input type="text" name="name" size="28" value="$nam"></td>
-      </tr><tr>
-        <th>Ｅメール</th>
-        <td><input type="text" name="email" size="28" value="$eml"></td>
-      </tr><tr>
-        <th>タイトル</th>
-        <td><input type="text" name="sub" size="36" value="$sub"></td>
-      </tr><tr>
-        <th>参照先</th>
-        <td><input type="text" name="url" size="50" value="$url"></td>
-      </tr><tr>
-        <th>内容</th>
-        <td><textarea name="comment" cols="56" rows="7">$com</textarea></td>
-      </tr>
-      </table>
-      <input type="submit" value="送信する">
-      <input type="reset" value="リセット">
-      </form>
-      </body>
-      </html>
-EOM
-
-=cut
-      }
+      $com =~ s|<br( /)?>|\n|g;
+      $url ||= "http://";
+      
+      $entry = {
+        no => $no,
+        date => $date,
+        name => $name,
+        eml => $eml,
+        sub => $sub,
+        com => $com,
+        url => $url
+      };
+      
+      $title = "管理モード ＞ 修正フォーム";
+    }
     # 修正実行
-    } elsif ($in->{job} eq "edit") {
-      $in->{url} = $self->param('url');
-      $in->{name} = $self->param('name');
-      $in->{sub}  = $self->param('sub');
-      $in->{comment} = $self->param('comment');
-      $in->{email} = $self->param('email');
+    elsif ($in->{job} eq "edit") {
+      $in->{url} = param('url');
+      $in->{name} = param('name');
+      $in->{sub}  = param('sub');
+      $in->{comment} = param('comment');
+      $in->{email} = param('email');
       
       # 未入力の場合
       if ($in->{url} eq "http://") { $in->{url} = ""; }
@@ -135,25 +109,30 @@ EOM
       # 読み出し
       my @data;
       my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $dat_fh,"+< $logfile_abs") or error("open error: $logfile_abs");
+      open(my $dat_fh,"+< $logfile_abs")
+        or Carp::croak("open error: $logfile_abs");
       flock($dat_fh, 2);
-      while (<$dat_fh>) {
-        my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pwd,$tim) = split(/<>/);
+      while (my $line = <$dat_fh>) {
+        $line = Encode::decode('UTF-8', $line);
+        my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pwd,$tim) = split(/<>/, $line);
 
         if ($in->{no} == $no) {
-          $_ = "$no<>$dat<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$hos<>$pwd<>$tim<>\n";
+          $line = "$no<>$dat<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$hos<>$pwd<>$tim<>\n";
         }
-        push(@data,$_);
+        push(@data,$line);
       }
 
       # 更新
       seek($dat_fh, 0, 0);
-      # print $dat_fh @data;
+      for my $d (@data) {
+        $d = Encode::encode('UTF-8', $d);
+        print $dat_fh @data;
+      }
       truncate($dat_fh, tell($dat_fh));
       close($dat_fh);
 
       # 完了メッセージ
-      # message("記事を修正しました");
+      $message = "記事を修正しました";
     }
 
     # ページ数
@@ -231,7 +210,47 @@ layout 'common', title => $title;
     </script>
   </div>
 % } elsif ($error) {
-  <%= include '/include/error', error => $error; %>
+  <%= include '/include/error', error => $error %>
+% } elsif ($message) {
+  <%= include '/include/message', message => $message %>
+% } elsif ($in->{job_edit}) {
+  <div align="right">
+    <form method="post">
+      <%= hidden_field mode => 'admin' %>
+      <%= hidden_field pass => $in->{pass} %>
+      <%= submit_button '&lt; 前画面' %>
+    </form>
+  </div>
+  <div class="ttl">■ 編集フォーム</div>
+  <ul>
+    <li>変更する部分のみ修正して送信ボタンを押してください。
+  </ul>
+  <form method="post">
+    <%= hidden_field mode => 'admin' %>
+    <%= hidden_field job => 'edit' %>
+    <%= hidden_field no => $entry->{no} %>
+    <%= hidden_field pass => $in->{pass} %>
+    <table class="form-tbl">
+      <tr>
+        <th>おなまえ</th>
+        <td><input type="text" name="name" size="28" value="<%= $entry->{name} %>"></td>
+      </tr><tr>
+        <th>Ｅメール</th>
+        <td><input type="text" name="email" size="28" value="<%= $entry->{eml} %>"></td>
+      </tr><tr>
+        <th>タイトル</th>
+        <td><input type="text" name="sub" size="36" value="<%= $entry->{sub} %>"></td>
+      </tr><tr>
+        <th>参照先</th>
+        <td><input type="text" name="url" size="50" value="<%= $entry->{url} %>"></td>
+      </tr><tr>
+        <th>内容</th>
+        <td><textarea name="comment" cols="56" rows="7"><%= $entry->{com} %></textarea></td>
+      </tr>
+    </table>
+    <%= submit_button '送信する' %>
+    <input type="reset" value="リセット">
+  </form>
 % } else {
 
 %= stylesheet begin
@@ -255,7 +274,7 @@ layout 'common', title => $title;
   <div class="ttl">■ 管理モード</div>
   <form method="post">
     <%= hidden_field mode => 'admin' %>
-    <%= hidden_field 'pass' %>
+    <%= hidden_field 'pass' => $pass %>
     <div class="btn">
       <%= submit_button '修正', name => 'job_edit' %>
       <%= submit_button '削除', name => 'job_dele' %>
@@ -263,7 +282,7 @@ layout 'common', title => $title;
 
     % for my $entry (@$entries) {
       <div class="art">
-        <input type="checkbox" name="no" value="3">
+        <input type="checkbox" name="no" value="<%= $entry->{no} %>">
         [<%= $entry->{no} %>] <strong><%= $entry->{title} %></strong> 投稿者：<b><%= $entry->{name} %></b> <%= $entry->{date} %> [ <span><%= $entry->{hos} %></span> ]</div>
       </div>
       <div class="com"><%= $entry->{com} %></div>

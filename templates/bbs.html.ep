@@ -15,7 +15,7 @@
   my $message;
   my $error;
   my $title;
-  my $rows;
+  my $entries;
   
   if (lc $self->req->method eq 'post') {
     # 記事投稿
@@ -287,7 +287,7 @@
     my $page_btn = $self->aska->make_pager($i,$pg);
 
     # ループ部
-    $rows = [];
+    $entries = [];
     for my $line (@log) {
       my ($no, $date, $name, $eml, $sub, $com, $url) = split(/<>/, $line);
       $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
@@ -295,7 +295,7 @@
       $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
       $com .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
       
-      my $row = {
+      my $entry = {
         no => $no,
         date => $date,
         name => $name,
@@ -305,7 +305,7 @@
         url => $url
       };
       
-      push @$rows, $row;
+      push @$entries, $entry;
     }
 
     # コンフィグ
@@ -371,7 +371,7 @@
       </tr><tr>
         <th colspan="2">
             メッセージ<br />
-            <textarea name="comment" cols="60" rows="7"><%= session 'comment' // '' %></textarea>
+            <textarea name="comment" cols="60" entries="7"><%= session 'comment' // '' %></textarea>
         </th>
       </tr><tr>
         <th>参照先</th>
@@ -398,11 +398,11 @@
       </form>
     </div>
 
-    % for my $row (@$rows) {
+    % for my $entry (@$entries) {
       <div class="art">
-        [<b><%= $row->{no} %></b>] <strong><%= $row->{sub} %></strong>
-        投稿者：<b><%= $row->{name} %></b> 投稿日：<%= $row->{date} %> &nbsp; [<a href="<%= url_for->query(res => $row->{no}) %>">返信</a>]
-        <div class="com"><%= $row->{com} %></div>
+        [<b><%= $entry->{no} %></b>] <strong><%= $entry->{sub} %></strong>
+        投稿者：<b><%= $entry->{name} %></b> 投稿日：<%= $entry->{date} %> &nbsp; [<a href="<%= url_for->query(res => $entry->{no}) %>">返信</a>]
+        <div class="com"><%= $entry->{com} %></div>
       </div>
     % }
     
