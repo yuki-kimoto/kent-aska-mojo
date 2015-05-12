@@ -1,4 +1,4 @@
-@charset "shift_jis";
+@charset "UTF-8";
 
 body,td,th {
 	font-size: 80%;
@@ -12,13 +12,13 @@ a:hover {
 	text-decoration: underline;
 }
 
-/* ƒ^ƒCƒgƒ‹ */
+/* ã‚¿ã‚¤ãƒˆãƒ« */
 h1 {
 	font-size: 200%;
 	margin-bottom: 0;
 	color: #666;
 }
-/* “ŠeƒtƒH[ƒ€ */
+/* æŠ•ç¨¿ãƒ•ã‚©ãƒ¼ãƒ  */
 table.regfm {
 	margin: 1em 0;
 }
@@ -35,7 +35,7 @@ p.url {
 	margin: 1em 0 0 0;
 }
 
-/* ‹L– */
+/* è¨˜äº‹ */
 div.art {
 	border-top: 1px solid #888;
 	padding: 6px;
@@ -80,7 +80,7 @@ div.setback {
 	margin: 0 auto;
 }
 
-/* ƒGƒ‰[‰æ–Ê */
+/* ã‚¨ãƒ©ãƒ¼ç”»é¢ */
 div#err-box {
 	text-align: center;
 	width: 500px;
@@ -94,8 +94,8 @@ div#err-box p {
 }
 
 /*
-	ƒy[ƒW‘—‚è
-	Ql: http://css-happylife.com/template/page_nav/
+	ãƒšãƒ¼ã‚¸é€ã‚Š
+	å‚è€ƒ: http://css-happylife.com/template/page_nav/
 */
 ul.pager {
 	margin: 0 0 10px;

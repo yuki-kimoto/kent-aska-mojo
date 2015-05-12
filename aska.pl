@@ -66,62 +66,6 @@ get '/captcha' => sub {
   $self->render(data => $img_bin);
 };
 
-get '/check' => sub {
-  my $self = shift;
-  
-  my $config = $self->app->config;
-
-  print <<EOM;
-Content-type: text/html; charset=shift_jis
-
-<html>
-<head>
-<meta http-equiv="content-type" content="text/html; charset=shift_jis">
-<title>Check Mode</title>
-</head>
-<body>
-<b>Check Mode: [ $config->{version} ]</b>
-<ul>
-EOM
-
-  # ログファイル
-  my $logfile_abs = app->home->rel_file($config->{logfile});
-  if (-f $logfile_abs) {
-    print "<li>LOGパス : OK\n";
-    if (-r $logfile_abs && -w $logfile_abs) {
-      print "<li>LOGパーミッション : OK\n";
-    } else {
-      print "<li>LOGパーミッション : NG\n";
-    }
-  } else {
-    print "<li>LOGパス : NG\n";
-  }
-
-  # テンプレート
-  foreach (qw(bbs find note error message)) {
-    if (-f "$config->{tmpldir}/$_.html") {
-      print "<li>テンプレート( $_.html ) : OK\n";
-    } else {
-      print "<li>テンプレート( $_.html ) : NG\n";
-    }
-  }
-
-  # Image-Magick動作確認
-  eval { require Image::Magick; };
-  if ($@) {
-    print "<li>Image-Magick動作: NG\n";
-  } else {
-    print "<li>Image-Magick動作: OK\n";
-  }
-
-  print <<EOM;
-</ul>
-</body>
-</html>
-EOM
-
-};
-
 # ヘルパー定義
 # 自動リンク
 app->helper('aska.autolink' => sub {
