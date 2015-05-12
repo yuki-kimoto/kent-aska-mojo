@@ -1,5 +1,3 @@
-#!/usr/bin/env
-
 use FindBin;
 my $lib_path;
 BEGIN { $lib_path = "$FindBin::Bin/extlib/lib/perl5" }
