@@ -1,6 +1,6 @@
 # ASKA BBS (Mojoliciousバージョン)
 
-これは、[Kent Webの[ASKA BBS](http://www.kent-web.com/bbs/aska.html)を、
+これは、使いやすい掲示板である[Kent WebのASKA BBS](http://www.kent-web.com/bbs/aska.html)を、
 モダンなPerlの文法とMojoliciousを使って再実装したものです。
 ([サンプル](http://www.kent-web.com/bbs/aska/aska.cgi))
 
