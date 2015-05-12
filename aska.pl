@@ -313,8 +313,7 @@ app->helper('aska.mail_to' => sub {
   my $config = $self->app->config;
 
   # 件名をMIMEエンコード
-  if ($config->{chg_code} == 0) { require Jcode; }
-  my $msub = Jcode->new("BBS : $in->{sub}",'sjis')->mime_encode;
+  my $msub = "BBS : $in->{sub}";
 
   # コメント内の改行復元
   my $com = $in->{comment};
@@ -341,7 +340,6 @@ $com
 EOM
 
   # JISコード変換
-  $mbody = Jcode->new($mbody,'sjis')->jis;
 
   # メールアドレスがない場合は管理者メールに置き換え
   $in->{email} ||= $config->{mailto};
