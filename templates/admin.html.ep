@@ -1,6 +1,9 @@
 <%
   my $config = $self->app->config;
 
+  # データファイル
+  my $data_file = config->{logfile};
+
   # データ受理
   my $in = {};
   $in->{pass} = param('pass');
@@ -35,8 +38,8 @@
 
       # 削除情報をマッチング
       my @data;
-      my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $dat_fh,"+< $logfile_abs") or Carp::croak("open error: $logfile_abs");
+      open(my $dat_fh, '+<', $data_file)
+        or Carp::croak("open error: $data_file");
       flock($dat_fh, 2);
       while (my $line = <$dat_fh>) {
         $line = Encode::decode('UTF-8', $line);
@@ -59,13 +62,12 @@
     }
     # 修正画面
     elsif ($in->{job_edit} && $in->{no}) {
-      warn "aaaaaaaaaaaaaaaaaaaaaa $in->{no}";
       my $log;
-      my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $in_fh, $logfile_abs) or Carp::croak("open error: $logfile_abs");
+      open(my $in_fh, '<', $data_file)
+        or Carp::croak("open error: $data_file");
       while (my $line = <$in_fh>) {
         $line = Encode::decode('UTF-8', $line);
-        my ($no,$dat,$nam,$eml,$sub,$com,$url) = split(/<>/, $line);
+        my ($no,$dat,$nam,$email,$sub,$comment,$url) = split(/<>/, $line);
         
         if ($in->{no} == $no) {
           $log = $line;
@@ -73,22 +75,20 @@
         }
       }
       close($in_fh);
-      
-      warn "bbbbbbbbbbbbbbbbbbbbbb $log";
 
       # 修正フォームへ
-      my ($no,$date,$name,$eml,$sub,$com,$url) = split(/<>/, $log);
+      my ($no,$date,$name,$email,$sub,$comment,$url) = split(/<>/, $log);
 
-      $com =~ s|<br( /)?>|\n|g;
+      $comment =~ s|<br( /)?>|\n|g;
       $url ||= "http://";
       
       $entry = {
         no => $no,
         date => $date,
         name => $name,
-        eml => $eml,
+        email => $email,
         sub => $sub,
-        com => $com,
+        comment => $comment,
         url => $url
       };
       
@@ -108,13 +108,12 @@
 
       # 読み出し
       my @data;
-      my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $dat_fh,"+< $logfile_abs")
-        or Carp::croak("open error: $logfile_abs");
+      open(my $dat_fh, '+<', $data_file)
+        or Carp::croak("open error: $data_file");
       flock($dat_fh, 2);
       while (my $line = <$dat_fh>) {
         $line = Encode::decode('UTF-8', $line);
-        my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pwd,$tim) = split(/<>/, $line);
+        my ($no,$dat,$nam,$email,$sub,$comment,$url,$hos,$pwd,$tim) = split(/<>/, $line);
 
         if ($in->{no} == $no) {
           $line = "$no<>$dat<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$hos<>$pwd<>$tim<>\n";
@@ -151,25 +150,24 @@
 
     # 記事を展開
     my $i = 0;
-    my $logfile_abs = app->home->rel_file($config->{logfile});
-    open(my $in_fh, $logfile_abs) or Carp::croak("open error: $logfile_abs");
+    open(my $in_fh, '<',  $data_file)
+      or Carp::croak("open error: $data_file");
     while (my $line = <$in_fh>) {
       $line = Encode::decode('UTF-8', $line);
-      warn $line;
       $i++;
       next if ($i < $page + 1);
       last if ($i > $page + $logs);
 
-      my ($no, $date, $name, $eml, $sub, $com, $url, $hos) = split(/<>/, $line);
-      $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
+      my ($no, $date, $name, $email, $sub, $comment, $url, $hos) = split(/<>/, $line);
+      $name = qq|<a href="mailto:$email">$name</a>| if ($email);
 
       my $entry = {
         no => $no,
         date => $date,
         name => $name,
-        eml => $eml,
+        email => $email,
         sub => $sub,
-        com => $com,
+        comment => $comment,
         url => $url,
         hos => $hos
       };
@@ -236,7 +234,7 @@ layout 'common', title => $title;
         <td><input type="text" name="name" size="28" value="<%= $entry->{name} %>"></td>
       </tr><tr>
         <th>Ｅメール</th>
-        <td><input type="text" name="email" size="28" value="<%= $entry->{eml} %>"></td>
+        <td><input type="text" name="email" size="28" value="<%= $entry->{email} %>"></td>
       </tr><tr>
         <th>タイトル</th>
         <td><input type="text" name="sub" size="36" value="<%= $entry->{sub} %>"></td>
@@ -245,7 +243,7 @@ layout 'common', title => $title;
         <td><input type="text" name="url" size="50" value="<%= $entry->{url} %>"></td>
       </tr><tr>
         <th>内容</th>
-        <td><textarea name="comment" cols="56" rows="7"><%= $entry->{com} %></textarea></td>
+        <td><textarea name="comment" cols="56" rows="7"><%= $entry->{comment} %></textarea></td>
       </tr>
     </table>
     <%= submit_button '送信する' %>
@@ -265,7 +263,7 @@ layout 'common', title => $title;
   div.btn input { width:60px; }
   div.art { border-top:1px dotted gray; padding:5px; margin-top:10px; }
   div.art span, div.art strong { color:green; }
-  div.com { margin-left:2em; color:#804000; font-size:90%; }
+  div.comment { margin-left:2em; color:#804000; font-size:90%; }
 % end
 
   <div align="right">
@@ -285,7 +283,7 @@ layout 'common', title => $title;
         <input type="checkbox" name="no" value="<%= $entry->{no} %>">
         [<%= $entry->{no} %>] <strong><%= $entry->{title} %></strong> 投稿者：<b><%= $entry->{name} %></b> <%= $entry->{date} %> [ <span><%= $entry->{hos} %></span> ]</div>
       </div>
-      <div class="com"><%= $entry->{com} %></div>
+      <div class="comment"><%= $entry->{comment} %></div>
     % }
     % if ($back >= 0) {
       <%= submit_button '前ページ', name => "page:$back" %>

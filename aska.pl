@@ -6,13 +6,20 @@ use Mojolicious::Lite;
 use Carp 'croak';
 use Crypt::RC4;
 use Encode ();
+use File::Path 'mkpath';
 
 # コンフィグの読み込み
 plugin 'Config';
 
+# データファイルがなければ作成
+my $data_file = app->home->rel_file('data/data.txt');
+open my $fh, '>', $data_file
+  or croak("Can't open $data_file: $!");
+close $fh;
+app->config->{logfile} = $data_file;
+
 # BBS(トップページ )
 any '/' => 'bbs';
-
 
 # 留意事項
 get '/note';

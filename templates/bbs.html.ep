@@ -7,6 +7,9 @@
   my $in = {};
   $in->{mode} = param('mode');
   
+  # データファイル
+  my $data_file = config->{logfile};
+  
   # テンプレートで利用する変数
   my $bbs_title;
   my $homepage;
@@ -58,8 +61,8 @@
 
       #  URL個数チェック
       if ($config->{urlnum} > 0) {
-        my $com = $in->{comment};
-        my ($num) = ($com =~ s|(https?://)|$1|ig);
+        my $comment = $in->{comment};
+        my ($num) = ($comment =~ s|(https?://)|$1|ig);
         if ($num > $config->{urlnum}) {
           $error ||= "コメント中のURLアドレスは最大$config->{urlnum}個までです";
         }
@@ -116,14 +119,14 @@
             $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
       
       # 先頭記事読み取り
-      my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
+      open(my $dat_fh, '+<', $data_file)
+        or Carp::croak("open error: $data_file");
       flock($dat_fh, 2);;
       my $top = <$dat_fh>;
       
       # 重複投稿チェック
-      my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/,$top);
-      if ($in->{name} eq $nam && $in->{comment} eq $com) {
+      my ($no,$dat,$nam,$email,$sub,$comment,$url,$hos,$pw,$tim) = split(/<>/,$top);
+      if ($in->{name} eq $nam && $in->{comment} eq $comment) {
         close($dat_fh);
         $error ||= "二重投稿は禁止です";
       }
@@ -141,7 +144,7 @@
       }
       if ($flg) {
         close($dat_fh);
-        $error ||= error("現在投稿制限中です。もうしばらくたってから投稿をお願いします");
+        $error ||= "現在投稿制限中です。もうしばらくたってから投稿をお願いします";
       }
       
       unless ($error) {
@@ -191,17 +194,17 @@
     
       # 入力チェック
       if ($in->{num} eq '' or $in->{pwd} eq '') {
-        error("削除Noまたは削除キーが入力モレです");
+        $error ||= "削除Noまたは削除キーが入力モレです";
       }
 
       my ($flg,$crypt,@log);
-      my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $dat_fh,"+< $logfile_abs") or croak("open error: $logfile_abs");
+      open(my $dat_fh, '+<', $data_file)
+        or croak("open error: $data_file");
       flock($dat_fh, 2);;
       while (my $line = <$dat_fh>) {
         $line = Encode::decode('UTF-8', $line);
 
-        my ($no,$dat,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/, $line);
+        my ($no,$dat,$nam,$email,$sub,$comment,$url,$hos,$pw,$tim) = split(/<>/, $line);
 
         if ($in->{num} == $no) {
           $flg++;
@@ -213,13 +216,13 @@
 
       if (!$flg or !$crypt) {
         close($dat_fh);
-        error("削除キーが設定されていないか又は記事が見当たりません");
+        $error ||= "削除キーが設定されていないか又は記事が見当たりません";
       }
 
       # 削除キーを照合
       if (app->aska->decrypt($in->{pwd},$crypt) != 1) {
         close($dat_fh);
-        error("認証できません");
+        $error ||= "認証できません";
       }
 
       # ログ更新
@@ -243,27 +246,27 @@
     my %res;
     if ($in->{res}) {
       my $flg;
-      my $logfile_abs = app->home->rel_file($config->{logfile});
-      open(my $in_fh,"$logfile_abs") or error("open error: $logfile_abs");
+      open(my $in_fh, '<', $data_file)
+        or Carp::croak("open error: $data_file");
       while (my $line = <$in_fh>) {
         $line = Encode::decode('UTF-8', $line);
-        my ($no,$sub,$com) = (split(/<>/, $line))[0,4,5];
+        my ($no,$sub,$comment) = (split(/<>/, $line))[0,4,5];
         if ($in->{res} == $no) {
           $flg++;
           $res{sub} = $sub;
-          $res{com} = $com;
+          $res{comment} = $comment;
           last;
         }
       }
       close($in_fh);
 
-      if (!$flg) { error("該当記事が見つかりません"); }
+      if (!$flg) { $error ||= "該当記事が見つかりません"; }
 
       $res{sub} =~ s/^Re://g;
       $res{sub} =~ s/\[\d+\]\s?//g;
       $res{sub} = "Re:[$in->{res}] $res{sub}";
-      $res{com} = "&gt; $res{com}";
-      $res{com} =~ s|<br( /)?>|\n&gt; |ig;
+      $res{comment} = "&gt; $res{comment}";
+      $res{comment} =~ s|<br( /)?>|\n&gt; |ig;
     }
 
     # ページ数定義
@@ -271,8 +274,8 @@
 
     # データオープン
     my ($i,@log);
-    my $logfile_abs = app->home->rel_file($config->{logfile});
-    open(my $in_fh, $logfile_abs) or error("open error: $logfile_abs");
+    open(my $in_fh, '<', $data_file)
+      or Carp::croak("open error: $data_file");
     while (my $line = <$in_fh>) {
       $line = Encode::decode('UTF-8', $line);
       $i++;
@@ -289,19 +292,19 @@
     # ループ部
     $entries = [];
     for my $line (@log) {
-      my ($no, $date, $name, $eml, $sub, $com, $url) = split(/<>/, $line);
-      $name = qq|<a href="mailto:$eml">$name</a>| if ($eml);
-      $com = $self->aska->autolink($com) if ($config->{autolink});
-      $com =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
-      $com .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
+      my ($no, $date, $name, $email, $sub, $comment, $url) = split(/<>/, $line);
+      $name = qq|<a href="mailto:$email">$name</a>| if ($email);
+      $comment = $self->aska->autolink($comment) if ($config->{autolink});
+      $comment =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
+      $comment .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
       
       my $entry = {
         no => $no,
         date => $date,
         name => $name,
-        eml => $eml,
+        email => $email,
         sub => $sub,
-        com => $com,
+        comment => $comment,
         url => $url
       };
       
@@ -354,44 +357,44 @@
   <hr width="90%" />
   </div>
   <div class="setback">
-    <form action="<%= url_for %>" method="post">
+    <form method="post">
       <%= hidden_field mode => "regist" %>
       <table class="regfm">
       <tr>
         <th>おなまえ</th>
-        <td><input type="text" name="name" size="30" value="<%= session 'name' // '' %>" /></td>
+        <td><%= text_field name => session('name'), size => '30' %></td>
       </tr><tr>
         <th>Ｅメール</th>
-        <td><input type="text" name="email" size="30" value="<%= session 'email' // '' %>" /></td>
+        <td><%= text_field email => session('email'), size => '30' %></td>
       </tr><tr>
         <th>タイトル</th>
         <td>
-            <input type="text" name="sub" size="36" value="<%= session 'sub' // ''  %>" />
-            <input type="submit" value="送信する" /><input type="reset" value="リセット" />
+          <%= text_field 'sub', size => '36' %>
+          <%= submit_button '送信する' %><input type="reset" value="リセット" />
         </td>
       </tr><tr>
         <th colspan="2">
             メッセージ<br />
-            <textarea name="comment" cols="60" entries="7"><%= session 'comment' // '' %></textarea>
+            <%= text_area 'comment', cols => '60', entries => '7' %>
         </th>
       </tr><tr>
         <th>参照先</th>
-        <td><input type="text" name="url" size="50" value="<%= session 'url' // 'http://' %>" /></td>
+        <td><%= text_field url => session('url') // 'http://', size => '50' %></td>
       </tr><tr>
         <th>削除キー</th>
         <td class="small">
-            <input type="password" name="pwd" size="8" maxlength="8" />
+            <%= password_field 'pwd', size => '8'. maxlength => '8' %>
           （英数字で8文字以内）&nbsp;
-          <input type="checkbox" name="cookie" value="1" checked="checked" /> クッキー情報保存
+          <%= check_box cookie => 1, checked => 'checked' %> クッキー情報保存
         </td>
 
       % if ($use_captcha) {
         </tr><tr>
           <th>画像認証</th>
           <td class="small">
-            <input type="text" name="captcha" size="8" style="ime-mode:inactive" maxlength="8" />
+            <%= text_field 'captcha', size => '8', style => 'ime-mode:inactive', maxlength => '8' %>
             （右画像の数字を入力） <img src="<%= url_for("/captcha")->query(crypt => $str_crypt) %>" class="capt" alt="投稿キー" />
-            <input type="hidden" name="str_crypt" value="<%= $str_crypt %>" />
+            <%= hidden_field str_crypt => $str_crypt %>
           </td>
       % }
       </tr>
@@ -403,7 +406,7 @@
       <div class="art">
         [<b><%= $entry->{no} %></b>] <strong><%= $entry->{sub} %></strong>
         投稿者：<b><%= $entry->{name} %></b> 投稿日：<%= $entry->{date} %> &nbsp; [<a href="<%= url_for->query(res => $entry->{no}) %>">返信</a>]
-        <div class="com"><%= $entry->{com} %></div>
+        <div class="comment"><%= $entry->{comment} %></div>
       </div>
     % }
     
