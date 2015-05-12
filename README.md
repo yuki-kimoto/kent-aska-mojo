@@ -19,17 +19,35 @@
 * さくらのレンタルサーバー・スタンダードで動かすことができます。
   (またSuExecを設定しているWebサーバーで利用が可能)
 
-# ダウンロード
+# ダウンロード(開発版)
 
+ダウンロードします。
 
+    curl -kL https://github.com/yuki-kimoto/kent-aska-mojo/archive/devel.tar.gz > aska-devel.tar.gz
+
+展開します。
+
+    tar xf aska-devel.tar.gz
+
+名前を変更します。
+
+    mv kent-aska-mojo-devel aska
 
 # セットアップ
+
+ディレクトリの中に移動します。
+
+    cd aska
 
 ASKA BBSを最初にセットアップします。必要なモジュールがインストールされます。
 
     ./setup.sh
 
-# CGIとして実効する
+# CGIとして実効する場合
+
+Webブラウザから「aska.cgi」にアクセスしてください。
+
+
 
 
 # ASKA BBSからの移行方法
