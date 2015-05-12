@@ -67,7 +67,7 @@
 
       # 画像認証チェック
       if ($config->{use_captcha} > 0) {
-        require $config->{captcha_pl};
+        require $self->app->home->rel_file('lib/captcha.pl');
         if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
           $error ||= "画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください";
         }
@@ -323,7 +323,8 @@
     # 画像認証作成
     my $str_plain;
     if ($use_captcha > 0) {
-      require $config->{captcha_pl};
+      require $self->app->home->rel_file('lib/captcha.pl');
+
       ($str_plain,$str_crypt) = cap::make($config->{captcha_key},$config->{cap_len});
     }
     

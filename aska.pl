@@ -1,7 +1,7 @@
 use FindBin;
 my $lib_path;
-BEGIN { $lib_path = "$FindBin::Bin/extlib/lib/perl5" }
-use lib $lib_path;
+BEGIN { $lib_path = "$FindBin::Bin/lib" }
+use lib "$FindBin::Bin/extlib/lib/perl5";
 use Mojolicious::Lite;
 use Carp 'croak';
 use Crypt::RC4;
@@ -51,7 +51,7 @@ get '/captcha' => sub {
     open my $fh, '>', \$img_bin;
     local *STDOUT = $fh;
     if ($config->{use_captcha} == 2) {
-      require $config->{captsec_pl};
+      require $self->app->home->rel_file('lib/captsec.pl');
       my $font_ttl_path = $self->app->home->rel_file("/public/images/$config->{font_ttl}");
       $self->aska->load_capsec($plain, "$font_ttl_path");
     }
@@ -249,7 +249,8 @@ app->helper('aska.load_pngren' => sub {
   my @img = split(//, $plain);
 
   # 表示開始
-  require $config->{pngren_pl};
+  require $self->app->home->rel_file('lib/pngren.pl');
+
   pngren::PngRen($sipng, \@img);
 });
 
