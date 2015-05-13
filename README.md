@@ -46,16 +46,6 @@ root権限になります。
 
     cd /var/www/html
 
-この場合は、ドキュメントルートにおいてCGIが実行できる設定になっている必要がありますので、
-チェックしてください。
-
-たとえば以下の設定が必要です。
-
-    <Directory /var/www/html>
-        Options +ExecCGI
-        AddHandler cgi-script .cgi
-    </Directory>
-
 ## 自分が管理しているサーバーで組み込みのWebサーバーを使って起動する場合
 
 ユーザー権限で、好きな場所にダウンロードしてください。この方法は、
@@ -85,6 +75,12 @@ ASKA BBSを最初にセットアップします。必要なモジュールがインストールされます。
 
     ./setup.sh
 
+セットアップの確認をします。以下のコマンドを実行してください。
+
+    perl -c aska.pl
+
+と入力してください。「syntax OK」と表示されればセットアップが成功しています。
+
 ## 自分が管理しているサーバーにCGIとして設置する場合の追加の処理
 
 自分が管理しているサーバーにCGIとして設置する場合は、ファイルの権限をapache
@@ -92,6 +88,16 @@ ASKA BBSを最初にセットアップします。必要なモジュールがインストールされます。
 
     cd /var/www/html
     chown -R apache:apache aska
+
+また、この場合は、ドキュメントルートにおいてCGIが実行できる設定になっている必要がありますので、
+Apacheの設定ファイルをチェックしてください。
+
+たとえば以下の設定が必要です。
+
+    <Directory /var/www/html>
+        Options +ExecCGI
+        AddHandler cgi-script .cgi
+    </Directory>
 
 # ASKA BBSへのアクセス
 
@@ -130,6 +136,13 @@ Webブラウザから「aska.cgi」にアクセスしてください。
 設定ファイルは「aska.conf」です。ハッシュのリファレンスで記述されています。
 
 # FAQ
+
+## CentOSでセットアップができません
+
+CentOSでは、Perlのコアモジュールのすべてがインストールされませんので、
+以下のコマンドでコアモジュールをインストールしてください。
+
+    yum -y install perl-core
 
 ## PSGIに対応していますか
 
