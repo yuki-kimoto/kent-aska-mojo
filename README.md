@@ -137,6 +137,10 @@ Webブラウザから「aska.cgi」にアクセスしてください。
 
 # FAQ
 
+## Internal Server Errorになってしまいます
+
+エラーの内容を見るには「log/production.log」の中身を見てください。
+
 ## CentOSでセットアップができません
 
 CentOSでは、Perlのコアモジュールのすべてがインストールされませんので、

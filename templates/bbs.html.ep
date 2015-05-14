@@ -118,16 +118,23 @@
       my $date = sprintf("%04d/%02d/%02d(%s) %02d:%02d",
             $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
       
-      # 先頭記事読み取り
+      # 記事読み取り
       open(my $dat_fh, '+<', $data_file)
         or Carp::croak("open error: $data_file");
-      flock($dat_fh, 2);;
-      my $top = <$dat_fh>;
+      flock($dat_fh, 2);
+      my @lines;
+      while (my $line = <$dat_fh>) {
+        $line =~ s/\x0D?\x0A?$//;
+        $line = Encode::decode('UTF-8', $line);
+        push @lines, $line;
+      }
+      
+      # 先頭記事
+      my $top = $lines[0];
       
       # 重複投稿チェック
       my ($no,$dat,$nam,$email,$sub,$comment,$url,$hos,$pw,$tim) = split(/<>/,$top);
       if ($in->{name} eq $nam && $in->{comment} eq $comment) {
-        close($dat_fh);
         $error ||= "二重投稿は禁止です";
       }
 
@@ -143,7 +150,6 @@
         }
       }
       if ($flg) {
-        close($dat_fh);
         $error ||= "現在投稿制限中です。もうしばらくたってから投稿をお願いします";
       }
       
@@ -152,27 +158,23 @@
         $no++;
 
         # 記事数調整
-        my @data = ($top);
+        my @new_lines;
         my $i = 0;
-        while (my $line = <$dat_fh>) {
-          $line = Encode::decode('UTF-8', $line);
+        for my $line (@lines) {
           $i++;
-          push(@data,$line);
-
-          last if ($i >= $config->{maxlog}-1);
+          push(@new_lines, $line);
+          last if ($i >= $config->{maxlog} - 1);
         }
 
         # 更新
+        my $new_line = "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>";
+        unshift @new_lines, $new_line;
         seek($dat_fh, 0, 0);
-        my $new_line = "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>\n";
-        $new_line = Encode::encode('UTF-8', $new_line);
-        print $dat_fh $new_line;
-        for my $line (@data) {
+        for my $line (@new_lines) {
           $line = Encode::encode('UTF-8', $line);
-          print $dat_fh $line;
+          print $dat_fh "$line\n";
         }
         truncate($dat_fh, tell($dat_fh));
-        close($dat_fh);
 
         # クッキー格納
         $self->session(name => $in->{name});
