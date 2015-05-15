@@ -297,10 +297,8 @@
     $entries = [];
     for my $line (@log) {
       my ($no, $date, $name, $email, $sub, $comment, $url) = split(/<>/, $line);
-      $name = qq|<a href="mailto:$email">$name</a>| if ($email);
       $comment = $self->aska->autolink($comment) if ($config->{autolink});
       $comment =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
-      $comment .= qq|<p class="url"><a href="$url" target="_blank">$url</a></p>| if ($url);
       
       my $entry = {
         no => $no,
@@ -409,8 +407,22 @@
     % for my $entry (@$entries) {
       <div class="art">
         [<b><%= $entry->{no} %></b>] <strong><%= $entry->{sub} %></strong>
-        投稿者：<b><%= $entry->{name} %></b> 投稿日：<%= $entry->{date} %> &nbsp; [<a href="<%= url_for->query(res => $entry->{no}) %>">返信</a>]
-        <div class="comment"><%= $entry->{comment} %></div>
+        投稿者：<b>
+        % if (my $email = $entry->{email}) {
+          <a href="mailto:<%= $email %>"><%= $entry->{name} %></a>
+        % } else {
+          <%= $entry->{name} %>
+        % }
+        </b>
+        投稿日：<%= $entry->{date} %> &nbsp; [<a href="<%= url_for->query(res => $entry->{no}) %>">返信</a>]
+        <div class="comment">
+          <%= $entry->{comment} %>
+          % if (my $url = $entry->{url}) {
+            <p class="url">
+              <a href="<%= $url %>" target="_blank"><%= $url %></a>
+            </p>
+          % }
+        </div>
       </div>
     % }
     

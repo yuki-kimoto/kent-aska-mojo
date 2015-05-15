@@ -12,8 +12,8 @@ use MIME::Lite;
 # コンフィグの読み込み
 plugin 'Config';
 
-app->config->{mailing} = 1;
-app->config->{mailto} = 'kimoto_yuki@0021.co.jp';
+# app->config->{mailing} = 1;
+# app->config->{mailto} = 'kimoto_yuki@0021.co.jp';
 
 # データファイルがなければ作成
 my $data_file = app->home->rel_file('data/data.txt');
@@ -97,9 +97,9 @@ app->helper('aska.get_host' => sub {
   my $config = $self->app->config;
   
   # IP&ホスト取得
-  my $host = $ENV{REMOTE_HOST};
-  my $addr = $ENV{REMOTE_ADDR};
-  if ($config->{gethostbyaddr} && ($host eq "" || $host eq $addr)) {
+  my $addr = $self->tx->remote_address;
+  my $host;
+  if ($config->{gethostbyaddr}) {
     $host = gethostbyaddr(pack("C4", split(/\./, $addr)), 2);
   }
 
@@ -128,8 +128,8 @@ app->helper('aska.get_host' => sub {
     }
   }
 
-  if ($host eq "") { $host = $addr; }
-  return ($host,$addr);
+  $host ||= $addr;
+  return ($host, $addr);
 });
 
 #  crypt暗号
