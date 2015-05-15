@@ -17,9 +17,13 @@ app->config->{mailto} = 'kimoto_yuki@0021.co.jp';
 
 # データファイルがなければ作成
 my $data_file = app->home->rel_file('data/data.txt');
-open my $fh, '>', $data_file
-  or croak("Can't open $data_file: $!");
-close $fh;
+unless (-f $data_file) {
+  unless(open my $fh, '>', $data_file) {
+    my $error = "Can't open $data_file: $!";
+    app->log->error($error);
+    croak($error);
+  }
+}
 app->config->{logfile} = $data_file;
 
 # BBS(トップページ )
@@ -235,8 +239,8 @@ app->helper('aska.search' => sub {
   
   # 検索処理
   my @log;
-  my $logfile_abs = app->home->rel_file($config->{logfile});
-  open(my $in_fh, $logfile_abs) or croak("open error: $logfile_abs");
+  my $data_file = $config->{logfile};
+  open(my $in_fh, $data_file) or croak("open error: $data_file");
   while (my $line = <$in_fh>) {
     $line = Encode::decode('UTF-8', $line);
     my ($no, $date, $nam, $eml, $sub, $comment, $url, $hos, $pw, $tim)
