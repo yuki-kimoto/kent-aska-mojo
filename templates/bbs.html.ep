@@ -30,6 +30,8 @@
       $in->{captcha} = param('captcha');
       $in->{comment} = param('comment');
       $in->{str_crypt} = param('str_crypt');
+      $in->{url} = param('url');
+      $in->{email} = param('email');
 
       # 不要改行カット
       $in->{sub}  =~ s|<br />||g;
@@ -180,7 +182,7 @@
         $self->session(url => $in->{url});
 
         # メール通知
-        $self->aska->mail_to($in, $date,$host) if ($config->{mailing} == 1);
+        $self->aska->mail_to($in, $date, $host) if ($config->{mailing} == 1);
 
         # 完了画面
         $message = "ありがとうございます。記事を受理しました。";

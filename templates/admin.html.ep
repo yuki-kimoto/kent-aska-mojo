@@ -96,10 +96,10 @@
     }
     # 修正実行
     elsif ($in->{job} eq "edit") {
-      $in->{url} = param('url');
       $in->{name} = param('name');
       $in->{sub}  = param('sub');
       $in->{comment} = param('comment');
+      $in->{url} = param('url');
       $in->{email} = param('email');
       
       # 未入力の場合

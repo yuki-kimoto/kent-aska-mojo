@@ -5,11 +5,15 @@ use lib "$FindBin::Bin/extlib/lib/perl5";
 use Mojolicious::Lite;
 use Carp 'croak';
 use Crypt::RC4;
-use Encode ();
+use Encode 'encode';
 use File::Path 'mkpath';
+use MIME::Lite;
 
 # コンフィグの読み込み
 plugin 'Config';
+
+app->config->{mailing} = 1;
+app->config->{mailto} = 'kimoto_yuki@0021.co.jp';
 
 # データファイルがなければ作成
 my $data_file = app->home->rel_file('data/data.txt');
@@ -235,13 +239,14 @@ app->helper('aska.search' => sub {
   open(my $in_fh, $logfile_abs) or croak("open error: $logfile_abs");
   while (my $line = <$in_fh>) {
     $line = Encode::decode('UTF-8', $line);
-    my ($no,$date,$nam,$eml,$sub,$com,$url,$hos,$pw,$tim) = split(/<>/, $line);
+    my ($no, $date, $nam, $eml, $sub, $comment, $url, $hos, $pw, $tim)
+      = split(/<>/, $line);
     
     my $flg;
     foreach my $wd (@wd) {
       $wd = quotemeta $wd;
       print $wd;
-      if ("$nam $eml $sub $com $url" =~ /$wd/i) {
+      if ("$nam $eml $sub $comment $url" =~ /$wd/i) {
         $flg++;
         if ($cond == 0) { last; }
       } else {
@@ -260,21 +265,19 @@ app->helper('aska.search' => sub {
 
 app->helper('aska.mail_to' => sub {
 
-  my ($self, $in, $date,$host) = @_;
-  
-  my $config = $self->app->config;
+  my ($self, $in, $date, $host) = @_;
 
   # 件名をMIMEエンコード
   my $msub = "BBS : $in->{sub}";
 
   # コメント内の改行復元
-  my $com = $in->{comment};
-  $com =~ s/<br>/\n/g;
-  $com =~ s/&lt;/>/g;
-  $com =~ s/&gt;/</g;
-  $com =~ s/&quot;/"/g;
-  $com =~ s/&amp;/&/g;
-  $com =~ s/&#39;/'/g;
+  my $comment = $in->{comment};
+  $comment =~ s/<br>/\n/g;
+  $comment =~ s/&lt;/>/g;
+  $comment =~ s/&gt;/</g;
+  $comment =~ s/&quot;/"/g;
+  $comment =~ s/&amp;/&/g;
+  $comment =~ s/&#39;/'/g;
 
   # メール本文を定義
   my $mbody = <<EOM;
@@ -288,31 +291,23 @@ app->helper('aska.mail_to' => sub {
 E-mail：$in->{email}
 URL   ：$in->{url}
 
-$com
+$comment
 EOM
 
-  # JISコード変換
-
   # メールアドレスがない場合は管理者メールに置き換え
+  my $config = $self->app->config;
   $in->{email} ||= $config->{mailto};
 
-  # sendmailコマンド
-  my $scmd = "$config->{sendmail} -t -i";
-  if ($config->{sendm_f}) {
-    $scmd .= " -f $in->{email}";
-  }
-
-  # 送信
-  open(MAIL,"| $scmd") or error("送信失敗");
-  print MAIL "To: $config->{mailto}\n";
-  print MAIL "From: $in->{email}\n";
-  print MAIL "Subject: $msub\n";
-  print MAIL "MIME-Version: 1.0\n";
-  print MAIL "Content-type: text/plain; charset=ISO-2022-JP\n";
-  print MAIL "Content-Transfer-Encoding: 7bit\n";
-  print MAIL "X-Mailer: $config->{version}\n\n";
-  print MAIL "$mbody\n";
-  close(MAIL);
+  # メール送信
+  my $ml = MIME::Lite->new(
+    From => $in->{email},
+    To => $config->{mailto},
+    Subject => encode('MIME-Header-ISO_2022_JP', $msub),
+    Type => 'text/plain; charset="ISO-2022-JP"',
+    Encoding => '7bit',
+    Data => encode('ISO-2022-JP', $mbody)
+  );
+  $ml->send();
 });
 
 #  エラー処理
