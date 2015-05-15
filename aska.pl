@@ -1,6 +1,4 @@
 use FindBin;
-my $lib_path;
-BEGIN { $lib_path = "$FindBin::Bin/lib" }
 use lib "$FindBin::Bin/extlib/lib/perl5";
 use Mojolicious::Lite;
 use Carp 'croak';
