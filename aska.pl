@@ -8,10 +8,14 @@ use File::Path 'mkpath';
 use MIME::Lite;
 
 # コンフィグの読み込み
-plugin 'Config';
+my $my_config_file = app->home->rel_file('aska.my.conf');
 
-# app->config->{mailing} = 1;
-# app->config->{mailto} = 'kimoto_yuki@0021.co.jp';
+if (-f $my_config_file) {
+  plugin 'Config', file => $my_config_file;
+}
+else {
+  plugin 'Config';
+}
 
 # データファイルがなければ作成
 my $data_file = app->home->rel_file('data/data.txt');

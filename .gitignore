@@ -3,3 +3,4 @@ log/*
 data/*
 !data/.gitignore
 extlib/*
+aska.my.conf
