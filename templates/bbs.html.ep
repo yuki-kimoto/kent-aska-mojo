@@ -350,59 +350,64 @@
 % } else {
 
   <div align="center">
-  <h1><%= $bbs_title %></h1>
-  <hr width="90%" />
-  [<a href="<%= url_for($homepage) %>" target="_top">トップに戻る</a>]
-  [<a href="<%= url_for('/note') %>" target="note" onclick="popup('/note')">留意事項</a>]
-  [<a href="<%= url_for('/find') %>">ワード検索</a>]
-  [<a href="<%= url_for('/admin') %>">管理用</a>]
-  <hr width="90%" />
+    <h1><%= $bbs_title %></h1>
+    <hr width="90%" />
+    [<a href="<%= url_for($homepage) %>" target="_top">トップに戻る</a>]
+    [<a href="<%= url_for('/note') %>" target="note" onclick="popup('/note')">留意事項</a>]
+    [<a href="<%= url_for('/find') %>">ワード検索</a>]
+    [<a href="<%= url_for('/admin') %>">管理用</a>]
+    <hr width="90%" />
   </div>
   <div class="setback">
-    <form method="post">
+    <form action="<%= url_for %>" method="post">
       <%= hidden_field mode => "regist" %>
       <table class="regfm">
-      <tr>
-        <th>おなまえ</th>
-        <td><%= text_field name => session('name'), size => '30' %></td>
-      </tr><tr>
-        <th>Ｅメール</th>
-        <td><%= text_field email => session('email'), size => '30' %></td>
-      </tr><tr>
-        <th>タイトル</th>
-        <td>
-          <%= text_field 'sub', size => '36' %>
-          <%= submit_button '送信する' %><input type="reset" value="リセット" />
-        </td>
-      </tr><tr>
-        <th colspan="2">
-            メッセージ<br />
-            <%= text_area 'comment', cols => '60', entries => '7' %>
-        </th>
-      </tr><tr>
-        <th>参照先</th>
-        <td><%= text_field url => session('url') // 'http://', size => '50' %></td>
-      </tr><tr>
-        <th>削除キー</th>
-        <td class="small">
-            <%= password_field 'pwd', size => '8'. maxlength => '8' %>
-          （英数字で8文字以内）&nbsp;
-          <%= check_box cookie => 1, checked => 'checked' %> クッキー情報保存
-        </td>
-
-      % if ($use_captcha) {
-        </tr><tr>
-          <th>画像認証</th>
-          <td class="small">
-            <%= text_field 'captcha', size => '8', style => 'ime-mode:inactive', maxlength => '8' %>
-            （右画像の数字を入力） <img src="<%= url_for("/captcha")->query(crypt => $str_crypt) %>" class="capt" alt="投稿キー" />
-            <%= hidden_field str_crypt => $str_crypt %>
+        <tr>
+          <th>おなまえ</th>
+          <td><%= text_field name => session('name'), size => '30' %></td>
+        </tr>
+        <tr>
+          <th>Ｅメール</th>
+          <td><%= text_field email => session('email'), size => '30' %></td>
+        </tr>
+        <tr>
+          <th>タイトル</th>
+          <td>
+            <%= text_field 'sub', size => '36' %>
+            <%= submit_button '送信する' %><input type="reset" value="リセット" />
           </td>
-      % }
-      </tr>
+        </tr>
+        <tr>
+          <th colspan="2">
+              メッセージ<br />
+              <%= text_area 'comment', cols => '60', entries => '7' %>
+          </th>
+        </tr>
+        <tr>
+          <th>参照先</th>
+          <td><%= text_field url => session('url') // 'http://', size => '50' %></td>
+        </tr>
+        <tr>
+          <th>削除キー</th>
+          <td class="small">
+              <%= password_field 'pwd', size => '8'. maxlength => '8' %>
+            （英数字で8文字以内）&nbsp;
+            <%= check_box cookie => 1, checked => 'checked' %> クッキー情報保存
+          </td>
+
+          % if ($use_captcha) {
+            </tr><tr>
+              <th>画像認証</th>
+              <td class="small">
+                <%= text_field 'captcha', size => '8', style => 'ime-mode:inactive', maxlength => '8' %>
+                （右画像の数字を入力） <img src="<%= url_for("/captcha")->query(crypt => $str_crypt) %>" class="capt" alt="投稿キー" />
+                <%= hidden_field str_crypt => $str_crypt %>
+              </td>
+          % }
+        </tr>
       </table>
-      </form>
-    </div>
+    </form>
+  </div>
 
     % for my $entry (@$entries) {
       <div class="art">
