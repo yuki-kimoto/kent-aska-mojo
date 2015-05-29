@@ -34,11 +34,11 @@
       $in->{email} = param('email');
 
       # 不要改行カット
-      $in->{sub}  =~ s|<br />||g;
-      $in->{name} =~ s|<br />||g;
-      $in->{pwd}  =~ s|<br />||g;
-      $in->{captcha} =~ s|<br />||g;
-      $in->{comment} =~ s|(<br />)+$||g;
+      $in->{sub}  =~ s/\x0D\x0A|\x0D|\x0A//g; 
+      $in->{name} =~ s/\x0D\x0A|\x0D|\x0A//g; 
+      $in->{pwd}  =~ s/\x0D\x0A|\x0D|\x0A//g; 
+      $in->{captcha} =~ s/\x0D\x0A|\x0D|\x0A//g; 
+      $in->{comment} =~ s/(\x0D\x0A|\x0D|\x0A)+$//g;
       
       #  禁止ワードチェック
       if ($config->{no_wd}) {
@@ -74,7 +74,7 @@
       if ($config->{use_captcha} > 0) {
         require $self->app->home->rel_file('lib/captcha.pl');
         if ($in->{captcha} !~ /^\d{$config->{cap_len}}$/) {
-          $error ||= "画像認証が入力不備です。<br />投稿フォームに戻って再読込み後、再入力してください";
+          $error ||= "画像認証が入力不備です。\n投稿フォームに戻って再読込み後、再入力してください";
         }
 
         # 投稿キーチェック
@@ -83,9 +83,9 @@
         #  1 : キー一致
         my $chk = cap::check($in->{captcha},$in->{str_crypt},$config->{captcha_key},$config->{cap_time},$config->{cap_len});
         if ($chk == 0) {
-          $error = "画像認証が制限時間を超過しました。<br />投稿フォームに戻って再読込み後指定の数字を再入力してください";
+          $error = "画像認証が制限時間を超過しました。\n投稿フォームに戻って再読込み後指定の数字を再入力してください";
         } elsif ($chk == -1) {
-          $error = "画像認証が不正です。<br />投稿フォームに戻って再読込み後再入力してください";
+          $error = "画像認証が不正です。\n投稿フォームに戻って再読込み後再入力してください";
         }
       }
 
@@ -95,16 +95,16 @@
 
       # フォーム内容をチェック
       if ($in->{name} eq "") {
-        $error ||= "名前が入力されていません<br />";
+        $error ||= "名前が入力されていません";
       }
       if ($in->{comment} eq "") {
-        $error ||= "コメントが入力されていません<br />";
+        $error ||= "コメントが入力されていません";
       }
       if ($in->{email} ne '' && $in->{email} !~ /^[\w\.\-]+\@[\w\.\-]+\.[a-zA-Z]{2,6}$/) {
-        $error ||= "Ｅメールの入力内容が不正です<br />";
+        $error ||= "Ｅメールの入力内容が不正です";
       }
       if ($in->{url} ne '' && $in->{url} !~ /^https?:\/\/[\w\-.!~*'();\/?:\@&=+\$,%#]+$/) {
-        $error ||= "参照先URLの入力内容が不正です<br />";
+        $error ||= "参照先URLの入力内容が不正です";
       }
       
       # ホスト取得
@@ -169,7 +169,13 @@
         }
 
         # 更新
-        my $new_line = "$no<>$date<>$in->{name}<>$in->{email}<>$in->{sub}<>$in->{comment}<>$in->{url}<>$host<>$pwd<>$time<>";
+        $in->{no} = $no;
+        $in->{date} = $date;
+        $in->{host} = $host;
+        $in->{pwd} = $pwd;
+        $in->{time} = $time;
+        
+        my $new_line = $self->aska->create_data_line($in);
         unshift @new_lines, $new_line;
         seek($dat_fh, 0, 0);
         for my $line (@new_lines) {
@@ -296,19 +302,7 @@
     # ループ部
     $entries = [];
     for my $line (@log) {
-      my ($no, $date, $name, $email, $sub, $comment, $url) = split(/<>/, $line);
-      $comment = $self->aska->autolink($comment) if ($config->{autolink});
-      $comment =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
-      
-      my $entry = {
-        no => $no,
-        date => $date,
-        name => $name,
-        email => $email,
-        sub => $sub,
-        comment => $comment,
-        url => $url
-      };
+      my $entry = $self->aska->parse_data_line($line);
       
       push @$entries, $entry;
     }
@@ -421,7 +415,10 @@
         </b>
         投稿日：<%= $entry->{date} %> &nbsp; [<a href="<%= url_for->query(res => $entry->{no}) %>">返信</a>]
         <div class="comment">
-          <%= $entry->{comment} %>
+          % warn $entry->{comment};
+          
+          <%= $self->aska->parse_comment($entry->{comment}) %>
+          
           % if (my $url = $entry->{url}) {
             <p class="url">
               <a href="<%= $url %>" target="_blank"><%= $url %></a>

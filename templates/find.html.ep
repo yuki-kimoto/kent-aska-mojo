@@ -10,23 +10,11 @@
   if ($word ne '') {
     @lines = $self->aska->search($word, $cond);
   }
-
+  
   # ループ部
   my $entries = [];
   for my $line (@lines) {
-    my ($no,$date,$name,$email,$sub,$comment,$url) = split(/<>/, $line);
-    $comment  = $self->aska->autolink($comment) if ($config->{autolink});
-    $comment =~ s/([>]|^)(&gt;[^<]*)/$1<span style="color:$config->{ref_col}">$2<\/span>/g if ($config->{ref_col});
-    
-    my $entry = {
-      no => $no,
-      date => $date,
-      name => $name,
-      email => $email,
-      sub => $sub,
-      comment => $comment,
-      url => $url
-    };
+    my $entry = $self->aska->parse_data_line($line);
     
     push @$entries, $entry;
   }

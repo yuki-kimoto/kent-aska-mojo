@@ -6,6 +6,8 @@ use Crypt::RC4;
 use Encode 'encode';
 use File::Path 'mkpath';
 use MIME::Lite;
+use Mojo::ByteStream;
+use Mojo::Util 'xml_escape';
 
 # コンフィグの読み込み
 my $my_config_file = app->home->rel_file('aska.my.conf');
@@ -84,6 +86,118 @@ get '/captcha' => sub {
 };
 
 # ヘルパー定義
+
+my @names = qw(no date name email sub comment url host pwd time );
+# データ行を解析して、Perlのデータにする
+app->helper('aska.parse_data_line' => sub {
+  my ($self, $line) = @_;
+  
+  my $row = {};
+  my @values = split(/<>/, $line);
+  
+  # 各値をエスケープの復元処理
+  for (my $i = 0; $i < @names; $i++) {
+    my $name = $names[$i];
+    $row->{$name} = $self->aska->decode_data($values[$i]);
+  }
+  
+  return $row;
+});
+
+# データ用のエスケープ処理
+app->helper('aska.encode_data' => sub {
+  my ($self, $data) = @_;
+  
+  # エスケープ処理
+  $data =~ s/&/&amp;/g;
+  $data =~ s/</&lt;/g;
+  $data =~ s/>/&gt;/g;
+  $data =~ s/"/&quot;/g;
+  $data =~ s/'/&#39;/g;
+  $data =~ s|\r\n|<br />|g;
+  $data =~ s|[\r\n]|<br />|g;
+  
+  return $data;
+});
+
+# データ用のエスケープ復元処理
+app->helper('aska.decode_data' => sub {
+  my ($self, $data) = @_;
+  
+  return unless defined $data;
+  
+  # エスケープ復元処理
+  $data =~ s/&lt;/>/g;
+  $data =~ s/&gt;/</g;
+  $data =~ s/&quot;/"/g;
+  $data =~ s/&amp;/&/g;
+  $data =~ s/&#39;/'/g;
+  $data =~ s|<br />|\n|g;
+  
+  return $data;
+});
+
+# 保存データ行の作成
+app->helper('aska.create_data_line' => sub {
+  my ($self, $in) = @_;
+  
+  # エスケープして行のデータを作成
+  my $row = {};
+  for my $name (@names) {
+    if (defined $name) {
+      $row->{$name} = $self->aska->encode_data($in->{$name});
+    }
+    else {
+      $row->{$name} = '';
+    }
+  }
+  
+  # 行の作成
+  my $line = join(
+    '<>',
+    (
+      $row->{no},
+      $row->{date},
+      $row->{name},
+      $row->{email},
+      $row->{sub},
+      $row->{comment},
+      $row->{url},
+      $row->{host},
+      $row->{pwd},
+      $row->{time}
+    )
+  );
+  $line .= '<>';
+  
+  return $line;
+});
+
+# コメント解析
+app->helper('aska.parse_comment' => sub {
+  my ($self, $comment) = @_;
+  
+  # コンフィグ
+  my $config = $self->app->config;
+  
+  # オートリンク
+  my $autolink = $config->{autolink};
+  
+  # 引用に色をつける
+  my $ref_col = $config->{ref_col};
+  
+  # 改行コードで結びつける
+  my $edit_comment = xml_escape($comment);
+  
+  # 改行を<br />に変換
+  $edit_comment =~ s#\x0D\x0A|\x0D|\x0A#<br />#g;
+  
+  # 自動HTMLエスケープしないようにバイトストリームオブジェクトに変換
+  my $edit_comment_b = Mojo::ByteStream->new($edit_comment);
+  
+  return $edit_comment_b;
+});
+
 # 自動リンク
 app->helper('aska.autolink' => sub {
   my ($self, $text) = @_;
