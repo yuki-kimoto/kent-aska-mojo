@@ -430,10 +430,10 @@
     
     <div class="ta-c">
       <form action="<%= url_for %>" method="post">
-        <input type="hidden" name="mode" value="dele" />
-        記事No<input type="text" name="num" size="3" />
-        削除キー<input type="password" name="pwd" size="4" maxlength="8" />
-        <input type="submit" value="削除" />
+        <%= hidden_field mode => "dele" %>
+        記事No<%= text_field 'num', size => "3" %>
+        削除キー<%= password_field pwd, size => "4", maxlength => "8" %>
+        <%= submit_button "削除" %>
       </form>
     </div>
   </div>

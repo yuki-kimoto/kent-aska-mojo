@@ -127,8 +127,8 @@ app->helper('aska.decode_data' => sub {
   return unless defined $data;
   
   # エスケープ復元処理
-  $data =~ s/&lt;/>/g;
-  $data =~ s/&gt;/</g;
+  $data =~ s/&lt;/</g;
+  $data =~ s/&gt;/>/g;
   $data =~ s/&quot;/"/g;
   $data =~ s/&amp;/&/g;
   $data =~ s/&#39;/'/g;
@@ -142,13 +142,13 @@ app->helper('aska.create_data_line' => sub {
   my ($self, $in) = @_;
   
   # エスケープして行のデータを作成
-  my $row = {};
+  my $entry = {};
   for my $name (@names) {
     if (defined $name) {
-      $row->{$name} = $self->aska->encode_data($in->{$name});
+      $entry->{$name} = $self->aska->encode_data($in->{$name});
     }
     else {
-      $row->{$name} = '';
+      $entry->{$name} = '';
     }
   }
   
@@ -156,16 +156,16 @@ app->helper('aska.create_data_line' => sub {
   my $line = join(
     '<>',
     (
-      $row->{no},
-      $row->{date},
-      $row->{name},
-      $row->{email},
-      $row->{sub},
-      $row->{comment},
-      $row->{url},
-      $row->{host},
-      $row->{pwd},
-      $row->{time}
+      $entry->{no},
+      $entry->{date},
+      $entry->{name},
+      $entry->{email},
+      $entry->{sub},
+      $entry->{comment},
+      $entry->{url},
+      $entry->{host},
+      $entry->{pwd},
+      $entry->{time}
     )
   );
   $line .= '<>';
