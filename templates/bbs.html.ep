@@ -403,39 +403,38 @@
     </form>
   </div>
 
-    % for my $entry (@$entries) {
-      <div class="art">
-        [<b><%= $entry->{no} %></b>] <strong><%= $entry->{sub} %></strong>
-        投稿者：<b>
-        % if (my $email = $entry->{email}) {
-          <a href="mailto:<%= $email %>"><%= $entry->{name} %></a>
-        % } else {
-          <%= $entry->{name} %>
+  % for my $entry (@$entries) {
+    <div class="art">
+      [<b><%= $entry->{no} %></b>] <strong><%= $entry->{sub} %></strong>
+      投稿者：<b>
+      % if (my $email = $entry->{email}) {
+        <a href="mailto:<%= $email %>"><%= $entry->{name} %></a>
+      % } else {
+        <%= $entry->{name} %>
+      % }
+      </b>
+      投稿日：<%= $entry->{date} %> &nbsp; [<a href="<%= url_for->query(res => $entry->{no}) %>">返信</a>]
+      <div class="comment">
+        <%= $self->aska->parse_comment($entry->{comment}) %>
+        
+        % if (my $url = $entry->{url}) {
+          <p class="url">
+            <a href="<%= $url %>" target="_blank"><%= $url %></a>
+          </p>
         % }
-        </b>
-        投稿日：<%= $entry->{date} %> &nbsp; [<a href="<%= url_for->query(res => $entry->{no}) %>">返信</a>]
-        <div class="comment">
-          <%= $self->aska->parse_comment($entry->{comment}) %>
-          
-          % if (my $url = $entry->{url}) {
-            <p class="url">
-              <a href="<%= $url %>" target="_blank"><%= $url %></a>
-            </p>
-          % }
-        </div>
       </div>
-    % }
-    
-    <div class="art-end"></div>
-    
-    <div class="ta-c">
-      <form action="<%= url_for %>" method="post">
-        <%= hidden_field mode => "dele" %>
-        記事No<%= text_field 'num', size => "3" %>
-        削除キー<%= password_field pwd, size => "4", maxlength => "8" %>
-        <%= submit_button "削除" %>
-      </form>
     </div>
+  % }
+    
+  <div class="art-end"></div>
+    
+  <div class="ta-c">
+    <form action="<%= url_for %>" method="post">
+      <%= hidden_field mode => "dele" %>
+      記事No<%= text_field 'num', size => "3" %>
+      削除キー<%= password_field 'pwd', size => "4", maxlength => "8" %>
+      <%= submit_button "削除" %>
+    </form>
   </div>
 % }
 
