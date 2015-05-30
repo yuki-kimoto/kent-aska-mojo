@@ -109,8 +109,6 @@
           $entry->{comment} = $in->{comment};
           $entry->{url} = $in->{url};
 
-          warn dumper $entry;
-          
           my $new_line = $self->aska->create_data_line($entry);
           push(@lines, $new_line);
         }
