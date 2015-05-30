@@ -135,19 +135,19 @@
       my $top = $lines[0];
       
       # 重複投稿チェック
-      my ($no,$dat,$nam,$email,$sub,$comment,$url,$hos,$pw,$tim) = split(/<>/,$top);
-      if ($in->{name} eq $nam && $in->{comment} eq $comment) {
+      my $top_entry = $self->aska->parse_data_line($top);
+      if ($in->{name} eq $top_entry->{name} && $in->{comment} eq $top_entry->{comment}) {
         $error ||= "二重投稿は禁止です";
       }
 
       # 連続投稿チェック
       my $flg;
       if ($config->{regCtl} == 1) {
-        if ($host eq $hos && $time - $tim < $config->{wait}) {
+        if ($host eq $top_entry->{host} && $time - $top_entry->{time} < $config->{wait}) {
           $flg = 1;
         }
       } elsif ($config->{regCtl} == 2) {
-        if ($time - $tim < $config->{wait}) {
+        if ($time - $top_entry->{time} < $config->{wait}) {
           $flg = 1;
         }
       }
@@ -157,7 +157,7 @@
       
       unless ($error) {
         # 記事No採番
-        $no++;
+        my $no = $top_entry->{no} + 1;
 
         # 記事数調整
         my @new_lines;
@@ -207,21 +207,21 @@
         $error ||= "削除Noまたは削除キーが入力モレです";
       }
 
-      my ($flg,$crypt,@log);
+      my ($flg, $crypt, @lines);
       open(my $dat_fh, '+<', $data_file)
         or croak("open error: $data_file");
       flock($dat_fh, 2);;
       while (my $line = <$dat_fh>) {
         $line = Encode::decode('UTF-8', $line);
+        
+        my $entry = $self->aska->parse_data_line($line);
 
-        my ($no,$dat,$nam,$email,$sub,$comment,$url,$hos,$pw,$tim) = split(/<>/, $line);
-
-        if ($in->{num} == $no) {
+        if ($in->{num} == $entry->{no}) {
           $flg++;
-          $crypt = $pw;
+          $crypt = $entry->{pwd};
           next;
         }
-        push(@log,$line);
+        push(@lines, $line);
       }
 
       if (!$flg or !$crypt) {
@@ -237,9 +237,9 @@
 
       # ログ更新
       seek($dat_fh, 0, 0);
-      for my $l (@log) {
-        $l = Encode::encode('UTF-8', $l);
-        print $dat_fh $l;
+      for my $line (@lines) {
+        $line = Encode::encode('UTF-8', $line);
+        print $dat_fh $line;
       }
       truncate($dat_fh, tell($dat_fh));
       close($dat_fh);
@@ -252,23 +252,24 @@
     #  記事表示
     $in->{res} = param('res');
     
-    $in->{res} =~ s/\D//g;
     my %res;
     if ($in->{res}) {
       my $flg;
-      open(my $in_fh, '<', $data_file)
+      open(my $data_fh, '<', $data_file)
         or Carp::croak("open error: $data_file");
-      while (my $line = <$in_fh>) {
+      while (my $line = <$data_fh>) {
         $line = Encode::decode('UTF-8', $line);
-        my ($no,$sub,$comment) = (split(/<>/, $line))[0,4,5];
-        if ($in->{res} == $no) {
+        
+        my $entry = $self->aska->parse_data_line($line);
+        
+        if ($in->{res} == $entry->{no}) {
           $flg++;
-          $res{sub} = $sub;
-          $res{comment} = $comment;
+          $res{sub} = $entry->{sub};
+          $res{comment} = $entry->{comment};
           last;
         }
       }
-      close($in_fh);
+      close($data_fh);
 
       if (!$flg) { $error ||= "該当記事が見つかりません"; }
 
@@ -283,25 +284,25 @@
     my $pg = $in->{pg} || 0;
 
     # データオープン
-    my ($i,@log);
-    open(my $in_fh, '<', $data_file)
+    my ($i, @lines);
+    open(my $data_fh, '<', $data_file)
       or Carp::croak("open error: $data_file");
-    while (my $line = <$in_fh>) {
+    while (my $line = <$data_fh>) {
       $line = Encode::decode('UTF-8', $line);
       $i++;
       next if ($i < $pg + 1);
       next if ($i > $pg + $config->{pg_max});
       
-      push(@log, $line);
+      push(@lines, $line);
     }
-    close($in_fh);
+    close($data_fh);
 
     # 繰越ボタン作成
     my $page_btn = $self->aska->make_pager($i,$pg);
 
     # ループ部
     $entries = [];
-    for my $line (@log) {
+    for my $line (@lines) {
       my $entry = $self->aska->parse_data_line($line);
       
       push @$entries, $entry;
