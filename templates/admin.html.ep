@@ -61,35 +61,23 @@
     }
     # 修正画面
     elsif ($in->{job_edit} && $in->{no}) {
-      my $log;
-      open(my $in_fh, '<', $data_file)
+      
+      # 修正するエントリーの情報を取得
+      open(my $data_fh, '<', $data_file)
         or Carp::croak("open error: $data_file");
-      while (my $line = <$in_fh>) {
+      while (my $line = <$data_fh>) {
         $line = Encode::decode('UTF-8', $line);
-        my ($no,$dat,$nam,$email,$sub,$comment,$url) = split(/<>/, $line);
+        my $entry_tmp = $self->aska->parse_data_line($line);
         
-        if ($in->{no} == $no) {
-          $log = $line;
+        if ($entry_tmp->{no} == $in->{no}) {
+          $entry = $entry_tmp;
           last;
         }
       }
-      close($in_fh);
+      close($data_fh);
 
-      # 修正フォームへ
-      my ($no,$date,$name,$email,$sub,$comment,$url) = split(/<>/, $log);
-
-      $comment =~ s|<br( /)?>|\n|g;
-      $url ||= "http://";
-      
-      $entry = {
-        no => $no,
-        date => $date,
-        name => $name,
-        email => $email,
-        sub => $sub,
-        comment => $comment,
-        url => $url
-      };
+      $entry->{comment} =~ s|<br( /)?>|\n|g;
+      $entry->{url} ||= "http://";
       
       $title = "管理モード ＞ 修正フォーム";
     }
@@ -149,9 +137,9 @@
 
     # 記事を展開
     my $i = 0;
-    open(my $in_fh, '<',  $data_file)
+    open(my $data_fh, '<',  $data_file)
       or Carp::croak("open error: $data_file");
-    while (my $line = <$in_fh>) {
+    while (my $line = <$data_fh>) {
       $line = Encode::decode('UTF-8', $line);
       $i++;
       next if ($i < $page + 1);
@@ -161,7 +149,7 @@
       
       push @$entries, $entry;
     }
-    close($in_fh);
+    close($data_fh);
 
     # ページ繰越定義
     $next = $page + $logs;
@@ -245,8 +233,9 @@
         <td><input type="text" name="url" size="50" value="<%= $entry->{url} %>"></td>
       </tr><tr>
         <th>内容</th>
-        <td><textarea name="comment" cols="56" rows="7">
-        <%= $entry->{comment} %></textarea></td>
+        <td>
+          <%= text_area comment => $entry->{comment}, cols => "56", rows => "7" %>
+        </td>
       </tr>
     </table>
     <%= submit_button '送信する' %>
