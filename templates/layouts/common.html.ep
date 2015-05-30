@@ -1,19 +1,17 @@
 <!DOCTYPE html>
 <html>
   <head>
-  <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
-  <meta http-equiv="content-script-type" content="text/javascript" />
-  <meta http-equiv="content-style-type" content="text/css" />
-  <%= stylesheet '/css/style.css' %>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <meta http-equiv="content-script-type" content="text/javascript" />
+    <meta http-equiv="content-style-type" content="text/css" />
+    <%= stylesheet '/css/style.css' %>
 
-  <script type="text/javascript">
-  <!--
-  function popup(url) {
-    window.open(url, "note", "width=550,height=350,scrollbars=1");
-  }
-  // -->
-  </script>
-  <title><%= $title %></title>
+    %= javascript begin
+      function popup(url) {
+        window.open(url, "note", "width=550,height=350,scrollbars=1");
+      }
+    % end
+    <title><%= $title %></title>
   </head>
   <body>
     <%= content %>
