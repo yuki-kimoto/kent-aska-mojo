@@ -19,6 +19,7 @@
   my $error;
   my $title;
   my $entries;
+  my $res_entry;
   
   if (lc $self->req->method eq 'post') {
     # 記事投稿
@@ -250,11 +251,12 @@
   }
   else {
     #  記事表示
-    $in->{res} = param('res');
+    my $res_no = param('res');
     
-    my %res;
-    if ($in->{res}) {
-      my $flg;
+    # レスポンスの場合
+    if ($res_no) {
+      # レスポンス対象のエントリーを探す
+      my $found;
       open(my $data_fh, '<', $data_file)
         or Carp::croak("open error: $data_file");
       while (my $line = <$data_fh>) {
@@ -262,22 +264,28 @@
         
         my $entry = $self->aska->parse_data_line($line);
         
-        if ($in->{res} == $entry->{no}) {
-          $flg++;
-          $res{sub} = $entry->{sub};
-          $res{comment} = $entry->{comment};
+        if ($res_no == $entry->{no}) {
+          $found = 1;
+          $res_entry = {};
+          $res_entry->{sub} = $entry->{sub};
+          $res_entry->{comment} = $entry->{comment};
           last;
         }
       }
       close($data_fh);
-
-      if (!$flg) { $error ||= "該当記事が見つかりません"; }
-
-      $res{sub} =~ s/^Re://g;
-      $res{sub} =~ s/\[\d+\]\s?//g;
-      $res{sub} = "Re:[$in->{res}] $res{sub}";
-      $res{comment} = "&gt; $res{comment}";
-      $res{comment} =~ s|<br( /)?>|\n&gt; |ig;
+      
+      # 見つからなかった場合はエラー
+      if ($found) {
+        # タイトルとコメントの修正
+        $res_entry->{sub} =~ s/^Re://g;
+        $res_entry->{sub} =~ s/\[\d+\]\s?//g;
+        $res_entry->{sub} = "Re:[$res_no] $res_entry->{sub}";
+        $res_entry->{comment} = "> $res_entry->{comment}";
+        $res_entry->{comment} =~ s/\n/\n> /g;
+      }
+      else {
+        $error ||= "該当記事が見つかりません";
+      }
     }
 
     # ページ数定義
@@ -368,14 +376,14 @@
         <tr>
           <th>タイトル</th>
           <td>
-            <%= text_field 'sub', size => '36' %>
+            <%= text_field 'sub' => ($res_entry ? $res_entry->{sub} : ''), size => '36' %>
             <%= submit_button '送信する' %><input type="reset" value="リセット" />
           </td>
         </tr>
         <tr>
           <th colspan="2">
               メッセージ<br />
-              <%= text_area 'comment', cols => '60', entries => '7' %>
+              <%= text_area 'comment' => ($res_entry ? $res_entry->{comment} : ''), cols => '60', rows => '7' %>
           </th>
         </tr>
         <tr>
