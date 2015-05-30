@@ -1,16 +1,13 @@
 <%
-  # スタッシュ
-  stash title => '完了';
-
   # レイアウト
-  layout 'common';
+  layout 'common', title => '完了';
 %>
 
 <div class="ta-c">
-<hr width="350" />
-<p class="msg"><%= $message %></p>
-<form action="<%= url_for %>">
-<input type="submit" value="掲示板に戻る" />
-</form>
-<hr width="350" />
+  <hr width="350" />
+  <p class="msg"><%= $message %></p>
+  <form action="<%= url_for %>">
+    <input type="submit" value="掲示板に戻る" />
+  </form>
+  <hr width="350" />
 </div>

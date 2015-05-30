@@ -1,13 +1,10 @@
 <%
-  # スタッシュ
-  stash title => 'ERROR!';
-
   # レイアウト
-  layout 'common';
+  layout 'common', title => "ERROR!";
 %>
 
 <div id="err-box">
-<h3>ERROR!</h3>
-<p><%= $error %><p>
-<input type="button" value="前画面に戻る" onclick="history.back()" />
+  <h3>ERROR!</h3>
+  <p><%= $error %><p>
+  <input type="button" value="前画面に戻る" onclick="history.back()" />
 </div>
