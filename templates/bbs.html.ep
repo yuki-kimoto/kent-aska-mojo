@@ -415,8 +415,6 @@
         </b>
         投稿日：<%= $entry->{date} %> &nbsp; [<a href="<%= url_for->query(res => $entry->{no}) %>">返信</a>]
         <div class="comment">
-          % warn $entry->{comment};
-          
           <%= $self->aska->parse_comment($entry->{comment}) %>
           
           % if (my $url = $entry->{url}) {

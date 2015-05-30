@@ -157,20 +157,8 @@
       $i++;
       next if ($i < $page + 1);
       last if ($i > $page + $logs);
-
-      my ($no, $date, $name, $email, $sub, $comment, $url, $hos) = split(/<>/, $line);
-      $name = qq|<a href="mailto:$email">$name</a>| if ($email);
-
-      my $entry = {
-        no => $no,
-        date => $date,
-        name => $name,
-        email => $email,
-        sub => $sub,
-        comment => $comment,
-        url => $url,
-        hos => $hos
-      };
+      
+      my $entry = $self->aska->parse_data_line($line);
       
       push @$entries, $entry;
     }
@@ -181,11 +169,26 @@
     $back = $page - $logs;
   };
 
-$title ||= '入室画面';
+  $title ||= '入室画面';
 
-layout 'common', title => $title;
+  layout 'common', title => $title;
 
 %>
+
+%= stylesheet begin
+  body,td,th { font-size:80%; background:#f0f0f0; font-family:Verdana,"MS PGothic","Osaka",Arial,sans-serif; }
+  p.ttl { font-weight:bold; color:#004080; border-bottom:1px solid #004080; padding:2px; }
+  p.err { color:#dd0000; }
+  p.msg { color:#006400; }
+  table.form-tbl { border:1px solid #8080C0; border-collapse:collapse; margin:1em 0; }
+  table.form-tbl th { border:1px solid #8080C0; background:#DCDCED; padding:5px; }
+  table.form-tbl td { border:1px solid #8080C0; background:#fff; padding:5px; }
+  div.ttl { border-bottom:1px solid #004080; padding:4px; color:#004080; font-weight:bold; margin:1em 0; }
+  div.btn input { width:60px; }
+  div.art { border-top:1px dotted gray; padding:5px; margin-top:10px; }
+  div.art span, div.art strong { color:green; }
+  div.comment { margin-left:2em; color:#804000; font-size:90%; }
+% end
 
 % if ($in->{pass} eq '') {
   <div align="center">
@@ -243,28 +246,14 @@ layout 'common', title => $title;
         <td><input type="text" name="url" size="50" value="<%= $entry->{url} %>"></td>
       </tr><tr>
         <th>内容</th>
-        <td><textarea name="comment" cols="56" rows="7"><%= $entry->{comment} %></textarea></td>
+        <td><textarea name="comment" cols="56" rows="7">
+        <%= $entry->{comment} %></textarea></td>
       </tr>
     </table>
     <%= submit_button '送信する' %>
     <input type="reset" value="リセット">
   </form>
 % } else {
-
-%= stylesheet begin
-  body,td,th { font-size:80%; background:#f0f0f0; font-family:Verdana,"MS PGothic","Osaka",Arial,sans-serif; }
-  p.ttl { font-weight:bold; color:#004080; border-bottom:1px solid #004080; padding:2px; }
-  p.err { color:#dd0000; }
-  p.msg { color:#006400; }
-  table.form-tbl { border:1px solid #8080C0; border-collapse:collapse; margin:1em 0; }
-  table.form-tbl th { border:1px solid #8080C0; background:#DCDCED; padding:5px; }
-  table.form-tbl td { border:1px solid #8080C0; background:#fff; padding:5px; }
-  div.ttl { border-bottom:1px solid #004080; padding:4px; color:#004080; font-weight:bold; margin:1em 0; }
-  div.btn input { width:60px; }
-  div.art { border-top:1px dotted gray; padding:5px; margin-top:10px; }
-  div.art span, div.art strong { color:green; }
-  div.comment { margin-left:2em; color:#804000; font-size:90%; }
-% end
 
   <div align="right">
     <a href="<%= url_for('/') %>"><button>&lt; 掲示板</button></a>
@@ -281,9 +270,13 @@ layout 'common', title => $title;
     % for my $entry (@$entries) {
       <div class="art">
         <input type="checkbox" name="no" value="<%= $entry->{no} %>">
-        [<%= $entry->{no} %>] <strong><%= $entry->{title} %></strong> 投稿者：<b><%= $entry->{name} %></b> <%= $entry->{date} %> [ <span><%= $entry->{hos} %></span> ]</div>
+        [<%= $entry->{no} %>]
+        <strong><%= $entry->{title} %></strong>
+        投稿者：<b><%= $entry->{name} %></b>
+        <%= $entry->{date} %>
+        [ <span><%= $entry->{host} %></span> ]
       </div>
-      <div class="comment"><%= $entry->{comment} %></div>
+      <div class="comment"><%= $self->aska->parse_comment($entry->{comment}) %></div>
     % }
     % if ($back >= 0) {
       <%= submit_button '前ページ', name => "page:$back" %>
