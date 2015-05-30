@@ -23,42 +23,41 @@
   my $no;
   my $pass = $in->{pass};
   
-  # パスワード認証
+  # パスワード認証失敗
   if ($pass && $pass ne $config->{password}) {
     $error = '認証できません';
   }
+  # 管理モード
   else {
-    # 管理モード
 
     # 削除処理
     if ($in->{job_dele} && $in->{no}) {
 
-      # 削除情報
-      my %del = map { $_ => 1} @{$self->every_param('no')};
+      # 削除する番号
+      my %delete_no_h = map { $_ => 1} @{$self->every_param('no')};
 
       # 削除情報をマッチング
-      my @data;
-      open(my $dat_fh, '+<', $data_file)
+      my @lines;
+      open(my $data_fh, '+<', $data_file)
         or Carp::croak("open error: $data_file");
-      flock($dat_fh, 2);
-      while (my $line = <$dat_fh>) {
+      flock($data_fh, 2);
+      while (my $line = <$data_fh>) {
         $line = Encode::decode('UTF-8', $line);
-        my ($no) = (split(/<>/, $line))[0];
+        my $entry = $self->aska->parse_data_line($line);
 
-        if (!defined($del{$no})) {
-          push(@data,$line);
+        unless ($delete_no_h{$entry->{no}}) {
+          push(@lines, $line);
         }
       }
 
-      # 更新
-      seek($dat_fh, 0, 0);
-      for my $d (@data) {
-        $d = Encode::encode('UTF-8', $d);
-        print $dat_fh $d;
+      # 新しいデータで更新
+      seek($data_fh, 0, 0);
+      for my $line (@lines) {
+        $line = Encode::encode('UTF-8', $line);
+        print $data_fh $line;
       }
-      truncate($dat_fh, tell($dat_fh));
-      close($dat_fh);
-
+      truncate($data_fh, tell($data_fh));
+      close($data_fh);
     }
     # 修正画面
     elsif ($in->{job_edit} && $in->{no}) {
@@ -108,10 +107,10 @@
 
       # 読み出し
       my @data;
-      open(my $dat_fh, '+<', $data_file)
+      open(my $data_fh, '+<', $data_file)
         or Carp::croak("open error: $data_file");
-      flock($dat_fh, 2);
-      while (my $line = <$dat_fh>) {
+      flock($data_fh, 2);
+      while (my $line = <$data_fh>) {
         $line = Encode::decode('UTF-8', $line);
         my ($no,$dat,$nam,$email,$sub,$comment,$url,$hos,$pwd,$tim) = split(/<>/, $line);
 
@@ -122,13 +121,13 @@
       }
 
       # 更新
-      seek($dat_fh, 0, 0);
+      seek($data_fh, 0, 0);
       for my $d (@data) {
         $d = Encode::encode('UTF-8', $d);
-        print $dat_fh @data;
+        print $data_fh @data;
       }
-      truncate($dat_fh, tell($dat_fh));
-      close($dat_fh);
+      truncate($data_fh, tell($data_fh));
+      close($data_fh);
 
       # 完了メッセージ
       $message = "記事を修正しました";
