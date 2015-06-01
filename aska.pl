@@ -188,13 +188,19 @@ app->helper('aska.parse_comment' => sub {
   
   # オートリンク
   my $autolink = $config->{autolink};
-  
+  if ($autolink) {
+    $comment =~ s/(s?https?:\/\/([\w\-.!~*'();\/?:\@=+\$,%#]|&amp;)+)/<a href="$1" target="_blank">$1<\/a>/g;
+  }
+
+  # XMLエスケープ
+  my $edit_comment = xml_escape($comment);
+
   # 引用に色をつける
   my $ref_col = $config->{ref_col};
-  
-  # 改行コードで結びつける
-  my $edit_comment = xml_escape($comment);
-  
+  if ($ref_col) {
+    $edit_comment =~ s/^(&gt;.+)$/<span style="color:$ref_col">$1<\/span>/mg;
+  }
+    
   # 改行を<br />に変換
   $edit_comment =~ s#\x0D\x0A|\x0D|\x0A#<br />#g;
   
