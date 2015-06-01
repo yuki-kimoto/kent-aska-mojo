@@ -116,10 +116,10 @@
       
       # 時間取得
       my $time = time;
-      my ($min,$hour,$mday,$mon,$year,$wday) = (localtime($time))[1..6];
+      my ($min, $hour, $mday, $mon, $year, $wday) = (localtime($time))[1..6];
       my @wk = ('Sun','Mon','Tue','Wed','Thu','Fri','Sat');
       my $date = sprintf("%04d/%02d/%02d(%s) %02d:%02d",
-            $year+1900,$mon+1,$mday,$wk[$wday],$hour,$min);
+        $year+1900, $mon+1, $mday, $wk[$wday], $hour, $min);
       
       # 記事読み取り
       open(my $dat_fh, '+<', $data_file)
@@ -200,53 +200,58 @@
     
     # ユーザー記事削除
     if ($in->{mode} eq 'dele') {
-      $in->{num} = param('in');
+      $in->{no} = param('no');
       $in->{pwd} = param('pwd');
     
       # 入力チェック
-      if ($in->{num} eq '' or $in->{pwd} eq '') {
+      if ($in->{no} eq '' || $in->{pwd} eq '') {
         $error ||= "削除Noまたは削除キーが入力モレです";
       }
-
-      my ($flg, $crypt, @lines);
-      open(my $dat_fh, '+<', $data_file)
-        or croak("open error: $data_file");
-      flock($dat_fh, 2);;
-      while (my $line = <$dat_fh>) {
-        $line = Encode::decode('UTF-8', $line);
+      
+      unless ($error) {
+        my $found;
+        my $crypt;
+        my @lines;
         
-        my $entry = $self->aska->parse_data_line($line);
+        open(my $dat_fh, '+<', $data_file)
+          or Carp::croak("open error: $data_file");
+        flock($dat_fh, 2);;
+        while (my $line = <$dat_fh>) {
+          $line = Encode::decode('UTF-8', $line);
+          
+          my $entry = $self->aska->parse_data_line($line);
 
-        if ($in->{num} == $entry->{no}) {
-          $flg++;
-          $crypt = $entry->{pwd};
-          next;
+          if ($in->{no} == $entry->{no}) {
+            $found++;
+            $crypt = $entry->{pwd};
+            next;
+          }
+          push(@lines, $line);
         }
-        push(@lines, $line);
-      }
 
-      if (!$flg or !$crypt) {
-        close($dat_fh);
-        $error ||= "削除キーが設定されていないか又は記事が見当たりません";
-      }
+        if (!$found || !$crypt) {
+          $error ||= "削除キーが設定されていないか又は記事が見当たりません";
+        }
 
-      # 削除キーを照合
-      if (app->aska->decrypt($in->{pwd},$crypt) != 1) {
-        close($dat_fh);
-        $error ||= "認証できません";
-      }
+        # 削除キーを照合
+        if (app->aska->decrypt($in->{pwd}, $crypt) != 1) {
+          $error ||= "認証できません";
+        }
+        
+        unless ($error) {
+          # ログ更新
+          seek($dat_fh, 0, 0);
+          for my $line (@lines) {
+            $line = Encode::encode('UTF-8', $line);
+            print $dat_fh $line;
+          }
+          truncate($dat_fh, tell($dat_fh));
+          close($dat_fh);
 
-      # ログ更新
-      seek($dat_fh, 0, 0);
-      for my $line (@lines) {
-        $line = Encode::encode('UTF-8', $line);
-        print $dat_fh $line;
+          # 完了
+          $message = "記事を削除しました";
+        }
       }
-      truncate($dat_fh, tell($dat_fh));
-      close($dat_fh);
-
-      # 完了
-      $message = "記事を削除しました";
     }
   }
   else {
@@ -440,7 +445,7 @@
   <div class="ta-c">
     <form action="<%= url_for %>" method="post">
       <%= hidden_field mode => "dele" %>
-      記事No<%= text_field 'num', size => "3" %>
+      記事No<%= text_field 'no', size => "3" %>
       削除キー<%= password_field 'pwd', size => "4", maxlength => "8" %>
       <%= submit_button "削除" %>
     </form>
