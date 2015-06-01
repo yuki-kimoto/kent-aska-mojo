@@ -36,14 +36,14 @@
 
       #  禁止ワードチェック
       if ($config->{no_wd}) {
-        my $flg;
+        my $found;
         for ( split(/,/,$config->{no_wd}) ) {
           if (index("$in->{name} $in->{sub} $in->{comment}", $_) >= 0) {
-            $flg = 1;
+            $found = 1;
             last;
           }
         }
-        if ($flg) {
+        if ($found) {
           $error ||= "禁止ワードが含まれています";
         }
       }
@@ -135,17 +135,17 @@
       }
 
       # 連続投稿チェック
-      my $flg;
+      my $found;
       if ($config->{regCtl} == 1) {
         if ($host eq $top_entry->{host} && $time - $top_entry->{time} < $config->{wait}) {
-          $flg = 1;
+          $found = 1;
         }
       } elsif ($config->{regCtl} == 2) {
         if ($time - $top_entry->{time} < $config->{wait}) {
-          $flg = 1;
+          $found = 1;
         }
       }
-      if ($flg) {
+      if ($found) {
         $error ||= "現在投稿制限中です。もうしばらくたってから投稿をお願いします";
       }
       
