@@ -1,14 +1,17 @@
 <%
   # レイアウト
   layout 'common', title => '完了';
+  my $type = stash('type') || '';
 %>
 
 <div class="ta-c">
   <hr width="350" />
   <p class="msg"><%= $message %></p>
-  <form action="<%= url_for %>">
-    <%= hidden_field 'pass' => param('pass') %>
-    <input type="submit" value="掲示板に戻る" />
+  <form action="<%= url_for %>" method="<%= $type eq 'admin' ? 'post' : '' %>">
+    % if ($type eq 'admin') {
+      <%= hidden_field 'pass' => param('pass') %>
+    % }
+    <input type="submit" value="<%= $type eq 'admin' ? '管理画面' : '掲示板' %>に戻る" />
   </form>
   <hr width="350" />
 </div>

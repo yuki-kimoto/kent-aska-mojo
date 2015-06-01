@@ -208,7 +208,7 @@
 % } elsif ($error) {
   <%= include '/include/error', error => $error %>
 % } elsif ($message) {
-  <%= include '/include/message', message => $message %>
+  <%= include '/include/message', message => $message, type => 'admin' %>
 % } elsif ($in->{job_edit}) {
   <div align="right">
     <form action="<%= url_for %>" method="post">
