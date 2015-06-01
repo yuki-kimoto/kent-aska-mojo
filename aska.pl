@@ -141,17 +141,23 @@ app->helper('aska.decode_data' => sub {
 app->helper('aska.create_data_line' => sub {
   my ($self, $in) = @_;
   
+  $in->{sub} =~ s/\x0D\x0A|\x0D|\x0A//g if defined $in->{sub};
+  $in->{name} =~ s/\x0D\x0A|\x0D|\x0A//g if defined $in->{name};
+  $in->{pwd}  =~ s/\x0D\x0A|\x0D|\x0A//g if defined $in->{pwd};
+  $in->{captcha} =~ s/\x0D\x0A|\x0D|\x0A//g if defined $in->{captcha};
+  $in->{comment} =~ s/(\x0D\x0A|\x0D|\x0A)+$//g if defined $in->{comment};
+  
   # エスケープして行のデータを作成
   my $entry = {};
   for my $name (@names) {
-    if (defined $name) {
+    if (defined $in->{$name}) {
       $entry->{$name} = $self->aska->encode_data($in->{$name});
     }
     else {
       $entry->{$name} = '';
     }
   }
-  
+
   # 行の作成
   my $line = join(
     '<>',

@@ -34,13 +34,6 @@
       $in->{url} = param('url');
       $in->{email} = param('email');
 
-      # 不要改行カット
-      $in->{sub}  =~ s/\x0D\x0A|\x0D|\x0A//g; 
-      $in->{name} =~ s/\x0D\x0A|\x0D|\x0A//g; 
-      $in->{pwd}  =~ s/\x0D\x0A|\x0D|\x0A//g; 
-      $in->{captcha} =~ s/\x0D\x0A|\x0D|\x0A//g; 
-      $in->{comment} =~ s/(\x0D\x0A|\x0D|\x0A)+$//g;
-      
       #  禁止ワードチェック
       if ($config->{no_wd}) {
         my $flg;
