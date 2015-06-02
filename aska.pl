@@ -358,27 +358,26 @@ app->helper('aska.decrypt_' => sub {
 });
 
 app->helper('aska.search' => sub {
-  my ($self, $word, $cond) = @_;
+  my ($self, $word_str, $cond) = @_;
   
   my $config = $self->app->config;
 
   # キーワードを配列化
-  my @wd = split(/\s+/, $word);
+  my @words = split(/\s+/, $word_str);
   
   # 検索処理
-  my @log;
+  my @lines;
   my $data_file = $config->{logfile};
-  open(my $in_fh, $data_file) or croak("open error: $data_file");
-  while (my $line = <$in_fh>) {
+  open(my $data_fh, $data_file) or croak("open error: $data_file");
+  while (my $line = <$data_fh>) {
     $line = Encode::decode('UTF-8', $line);
     my ($no, $date, $nam, $eml, $sub, $comment, $url, $hos, $pw, $tim)
       = split(/<>/, $line);
     
     my $flg;
-    foreach my $wd (@wd) {
-      $wd = quotemeta $wd;
-      print $wd;
-      if ("$nam $eml $sub $comment $url" =~ /$wd/i) {
+    foreach my $word (@words) {
+      $word = quotemeta $word;
+      if ("$nam $eml $sub $comment $url" =~ /$word/i) {
         $flg++;
         if ($cond == 0) { last; }
       } else {
@@ -387,12 +386,12 @@ app->helper('aska.search' => sub {
     }
     next if (!$flg);
 
-    push(@log,$line);
+    push(@lines, $line);
   }
-  close($in_fh);
+  close($data_fh);
 
   # 検索結果
-  return @log;
+  return @lines;
 });
 
 app->helper('aska.mail_to' => sub {
