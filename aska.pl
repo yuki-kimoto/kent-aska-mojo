@@ -1,5 +1,6 @@
 use FindBin;
 use lib "$FindBin::Bin/extlib/lib/perl5";
+use lib "$FindBin::Bin/lib";
 use Mojolicious::Lite;
 use Carp 'croak';
 use Crypt::RC4;
@@ -69,8 +70,8 @@ get '/captcha' => sub {
   {
     open my $fh, '>', \$img_bin;
     local *STDOUT = $fh;
+    
     if ($config->{use_captcha} == 2) {
-      require $self->app->home->rel_file('lib/captsec.pl');
       my $font_ttl_path = $self->app->home->rel_file("/public/images/$config->{font_ttl}");
       $self->aska->load_capsec($plain, "$font_ttl_path");
     }
@@ -330,15 +331,23 @@ app->helper('aska.make_pager' => sub {
 app->helper('aska.load_pngren' => sub {
   my ($self, $plain, $sipng) = @_;
   
-  my $config = $self->app->config;
-
   # 数字
   my @img = split(//, $plain);
 
   # 表示開始
-  require $self->app->home->rel_file('lib/pngren.pl');
+  require 'pngren.pl';
 
   pngren::PngRen($sipng, \@img);
+});
+
+#  認証画像作成 [ライブラリ版]
+app->helper('aska.load_capsec' => sub {
+  my ($self, $plain, $font) = @_;
+  
+  # 表示開始
+  require 'captsec.pl';
+
+  load_capsec($plain, $font);
 });
 
 #  復号
