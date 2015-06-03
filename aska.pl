@@ -1,5 +1,6 @@
 use FindBin;
 use lib "$FindBin::Bin/extlib/lib/perl5";
+use lib "$FindBin::Bin/lib";
 use Mojolicious::Lite;
 use Carp 'croak';
 use Crypt::RC4;
@@ -71,8 +72,8 @@ get '/captcha' => sub {
   {
     open my $fh, '>', \$img_bin;
     local *STDOUT = $fh;
+    
     if ($config->{use_captcha} == 2) {
-      require $self->app->home->rel_file('lib/captsec.pl');
       my $font_ttl_path = $self->app->home->rel_file("/public/images/$config->{font_ttl}");
       $self->aska->load_capsec($plain, "$font_ttl_path");
     }
@@ -288,15 +289,23 @@ app->helper('aska.decrypt' => sub {
 app->helper('aska.load_pngren' => sub {
   my ($self, $plain, $sipng) = @_;
   
-  my $config = $self->app->config;
-
   # 数字
   my @img = split(//, $plain);
 
   # 表示開始
-  require $self->app->home->rel_file('lib/pngren.pl');
+  require 'pngren.pl';
 
   pngren::PngRen($sipng, \@img);
+});
+
+#  認証画像作成 [ライブラリ版]
+app->helper('aska.load_capsec' => sub {
+  my ($self, $plain, $font) = @_;
+  
+  # 表示開始
+  require 'captsec.pl';
+
+  load_capsec($plain, $font);
 });
 
 #  復号
@@ -316,27 +325,26 @@ app->helper('aska.decrypt_' => sub {
 });
 
 app->helper('aska.search' => sub {
-  my ($self, $word, $cond) = @_;
+  my ($self, $word_str, $cond) = @_;
   
   my $config = $self->app->config;
 
   # キーワードを配列化
-  my @wd = split(/\s+/, $word);
+  my @words = split(/\s+/, $word_str);
   
   # 検索処理
-  my @log;
+  my @lines;
   my $data_file = $config->{logfile};
-  open(my $in_fh, $data_file) or croak("open error: $data_file");
-  while (my $line = <$in_fh>) {
+  open(my $data_fh, $data_file) or croak("open error: $data_file");
+  while (my $line = <$data_fh>) {
     $line = Encode::decode('UTF-8', $line);
     my ($no, $date, $nam, $eml, $sub, $comment, $url, $hos, $pw, $tim)
       = split(/<>/, $line);
     
     my $flg;
-    foreach my $wd (@wd) {
-      $wd = quotemeta $wd;
-      print $wd;
-      if ("$nam $eml $sub $comment $url" =~ /$wd/i) {
+    foreach my $word (@words) {
+      $word = quotemeta $word;
+      if ("$nam $eml $sub $comment $url" =~ /$word/i) {
         $flg++;
         if ($cond == 0) { last; }
       } else {
@@ -345,12 +353,12 @@ app->helper('aska.search' => sub {
     }
     next if (!$flg);
 
-    push(@log,$line);
+    push(@lines, $line);
   }
-  close($in_fh);
+  close($data_fh);
 
   # 検索結果
-  return @log;
+  return @lines;
 });
 
 app->helper('aska.mail_to' => sub {

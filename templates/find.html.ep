@@ -30,7 +30,7 @@
   </li>
   <li>
     キーワードはスペースで区切って複数指定することができます。
-    <form>
+    <form action="<%= url_for %>">
       キーワード <%= text_field 'word', size => '30' %>
       条件
       <%= select_field cond => [['AND' => 1], ['OR' => 0]] %> 

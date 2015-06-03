@@ -35,7 +35,6 @@ sub load_capsec {
 	print "Content-type: image/png\n\n";
 	binmode(STDOUT);
 	print STDOUT $img_out;
-	exit;
 }
 
 
