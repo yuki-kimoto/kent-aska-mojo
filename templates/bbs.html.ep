@@ -20,6 +20,7 @@
   my $title;
   my $entries;
   my $res_entry;
+  my $pager;
   
   if (lc $self->req->method eq 'post') {
     # 記事投稿
@@ -287,25 +288,29 @@
     }
 
     # ページ数定義
-    my $pg = $in->{pg} || 0;
+    my $page = $in->{page} || 1;
 
     # データオープン
-    my ($i, @lines);
+    my $entry_num = 0;
+    my @lines;
     open(my $data_fh, '<', $data_file)
       or Carp::croak("open error: $data_file");
     while (my $line = <$data_fh>) {
       $line = Encode::decode('UTF-8', $line);
-      $i++;
-      next if ($i < $pg + 1);
-      next if ($i > $pg + $config->{pg_max});
+      $entry_num++;
+      next if ($entry_num < $page);
+      next if ($entry_num > $page + $config->{pg_max} - 1);
       
       push(@lines, $line);
     }
     close($data_fh);
-
-    # 繰越ボタン作成
-    my $page_btn = $self->aska->make_pager($i,$pg);
-
+    
+    # ページャー
+    $pager = Data::Page->new;
+    $pager->total_entries($entry_num);
+    $pager->entries_per_page(config->{pg_max});
+    $pager->current_page($page);
+    
     # ループ部
     $entries = [];
     for my $line (@lines) {
@@ -434,7 +439,9 @@
   % }
     
   <div class="art-end"></div>
-    
+  
+  <%= include '/include/pagenation', pager => $pager %>
+  
   <div class="ta-c">
     <form action="<%= url_for %>" method="post">
       <%= hidden_field mode => "dele" %>

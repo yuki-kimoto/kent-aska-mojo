@@ -8,6 +8,8 @@ use File::Path 'mkpath';
 use MIME::Lite;
 use Mojo::ByteStream;
 use Mojo::Util 'xml_escape';
+use Data::Page;
+use Data::Page::Navigation;
 
 # コンフィグの読み込み
 my $my_config_file = app->home->rel_file('aska.my.conf');
@@ -280,50 +282,6 @@ app->helper('aska.decrypt' => sub {
   } else {
     return 0;
   }
-});
-
-# ページ送り作成
-app->helper('aska.make_pager' => sub {
-  my ($self, $i,$pg) = @_;
-  
-  my $config = $self->app->config;
-
-  # ページ繰越数定義
-  $config->{pg_max} ||= 10;
-  my $next = $pg + $config->{pg_max};
-  my $back = $pg - $config->{pg_max};
-
-  # ページ繰越ボタン作成
-  my @pg;
-  if ($back >= 0 || $next < $i) {
-    my $flg;
-    my ($w,$x,$y,$z) = (0,1,0,$i);
-    while ($z > 0) {
-      if ($pg == $y) {
-        $flg++;
-        push(@pg,qq!<li><span>$x</span></li>\n!);
-      } else {
-        push(@pg,qq!<li><a href="$config->{bbs_cgi}?pg=$y">$x</a></li>\n!);
-      }
-      $x++;
-      $y += $config->{pg_max};
-      $z -= $config->{pg_max};
-
-      if ($flg) { $w++; }
-      last if ($w >= 5 && @pg >= 10);
-    }
-  }
-  while( @pg >= 11 ) { shift(@pg); }
-  my $ret = join('', @pg);
-  if ($back >= 0) {
-    $ret = qq!<li><a href="$config->{bbs_cgi}?pg=$back">&laquo;</a></li>\n! . $ret;
-  }
-  if ($next < $i) {
-    $ret .= qq!<li><a href="$config->{bbs_cgi}?pg=$next">&raquo;</a></li>\n!;
-  }
-  
-  # 結果を返す
-  return $ret ? qq|<ul class="pager">\n$ret</ul>| : '';
 });
 
 #  認証画像作成 [ライブラリ版]
