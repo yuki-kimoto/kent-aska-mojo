@@ -277,7 +277,6 @@
           last;
         }
       }
-      close($data_fh);
       
       # 見つからなかった場合はエラー
       if ($found) {
@@ -293,37 +292,10 @@
       }
     }
 
-    # データオープン
-    my $line_num = 0;
-    my @lines;
-
-    open(my $data_fh, '<', $data_file)
-      or Carp::croak("open error: $data_file");
-    
-    my $pg_max = $config->{pg_max};
-    my $offset = ($page - 1) * $pg_max;
-    
-    while (my $line = <$data_fh>) {
-      if ($line_num >= $offset && $line_num < $offset + $pg_max) {
-        $line = Encode::decode('UTF-8', $line);
-        push(@lines, $line);
-      }
-      $line_num++;
-    }
-    
-    # ページャー
-    $pager = Data::Page->new;
-    $pager->total_entries($line_num);
-    $pager->entries_per_page($pg_max);
-    $pager->current_page($page);
-    
-    # ループ部
-    $entries = [];
-    for my $line (@lines) {
-      my $entry = $self->aska->parse_data_line($line);
-      
-      push @$entries, $entry;
-    }
+    # エントリー一覧の取得
+    my $result = $self->aska->get_entries($page);
+    $entries = $result->{entries};
+    $pager = $result->{pager};
 
     # コンフィグ
     my $config = app->config;

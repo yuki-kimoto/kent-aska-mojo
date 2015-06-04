@@ -90,7 +90,46 @@ get '/captcha' => sub {
 
 # ヘルパー定義
 
-my @names = qw(no date name email sub comment url host pwd time );
+# エントリー一覧の取得
+app->helper('aska.get_entries' => sub {
+  my ($self, $page) = @_;
+  
+  my $config = $self->app->config;
+
+  open(my $data_fh, '<', $data_file)
+    or Carp::croak("open error: $data_file");
+  
+  my $pg_max = $config->{pg_max};
+  my $offset = ($page - 1) * $pg_max;
+  
+  my @lines;
+  my $line_num = 0;
+  while (my $line = <$data_fh>) {
+    if ($line_num >= $offset && $line_num < $offset + $pg_max) {
+      $line = Encode::decode('UTF-8', $line);
+      push(@lines, $line);
+    }
+    $line_num++;
+  }
+  
+  # ページャー
+  my $pager = Data::Page->new;
+  $pager->total_entries($line_num);
+  $pager->entries_per_page($pg_max);
+  $pager->current_page($page);
+  
+  # ループ部
+  my $entries = [];
+  for my $line (@lines) {
+    my $entry = $self->aska->parse_data_line($line);
+    
+    push @$entries, $entry;
+  }
+  
+  return {entries => $entries, pager => $pager};
+});
+
+my @col_names = qw(no date name email sub comment url host pwd time );
 # データ行を解析して、Perlのデータにする
 app->helper('aska.parse_data_line' => sub {
   my ($self, $line) = @_;
@@ -99,8 +138,8 @@ app->helper('aska.parse_data_line' => sub {
   my @values = split(/<>/, $line);
   
   # 各値をエスケープの復元処理
-  for (my $i = 0; $i < @names; $i++) {
-    my $name = $names[$i];
+  for (my $i = 0; $i < @col_names; $i++) {
+    my $name = $col_names[$i];
     $row->{$name} = $self->aska->decode_data($values[$i]);
   }
   
@@ -152,7 +191,7 @@ app->helper('aska.create_data_line' => sub {
   
   # エスケープして行のデータを作成
   my $entry = {};
-  for my $name (@names) {
+  for my $name (@col_names) {
     if (defined $in->{$name}) {
       $entry->{$name} = $self->aska->encode_data($in->{$name});
     }
