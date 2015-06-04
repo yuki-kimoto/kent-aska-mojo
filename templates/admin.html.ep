@@ -6,11 +6,11 @@
 
   # データ受理
   my $in = {};
-  $in->{pass} = param('pass');
-  $in->{job_edit} = param('job_edit');
-  $in->{job_dele} = param('job_dele');
-  $in->{job} = param('job');
-  $in->{no} = param('no');
+  $in->{pass} = param('pass') // '';
+  $in->{job_edit} = param('job_edit') // '';
+  $in->{job_dele} = param('job_dele') // '';
+  $in->{job} = param('job') // '';
+  $in->{no} = param('no') // '';
 
   # テンプレートで使う変数
   my $error;

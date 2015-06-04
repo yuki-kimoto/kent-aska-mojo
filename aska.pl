@@ -235,14 +235,14 @@ app->helper('aska.get_host' => sub {
   }
 
   # IPチェック
-  my $flg;
+  my $found;
   foreach ( split(/\s+/,$config->{deny_addr}) ) {
     s/\./\\\./g;
     s/\*/\.\*/g;
 
-    if ($addr =~ /^$_/i) { $flg++; last; }
+    if ($addr =~ /^$_/i) { $found++; last; }
   }
-  if ($flg) {
+  if ($found) {
     error("アクセスを許可されていません");
 
   # ホストチェック
@@ -252,9 +252,9 @@ app->helper('aska.get_host' => sub {
       s/\./\\\./g;
       s/\*/\.\*/g;
 
-      if ($host =~ /$_$/i) { $flg++; last; }
+      if ($host =~ /$_$/i) { $found++; last; }
     }
-    if ($flg) {
+    if ($found) {
       error("アクセスを許可されていません");
     }
   }
@@ -335,27 +335,32 @@ app->helper('aska.search' => sub {
   # 検索処理
   my @lines;
   my $data_file = $config->{logfile};
-  open(my $data_fh, $data_file) or croak("open error: $data_file");
+  open(my $data_fh, '<', $data_file)
+    or croak("open error: $data_file");
   while (my $line = <$data_fh>) {
     $line = Encode::decode('UTF-8', $line);
-    my ($no, $date, $nam, $eml, $sub, $comment, $url, $hos, $pw, $tim)
-      = split(/<>/, $line);
-    
-    my $flg;
+    my $entry = $self->aska->parse_data_line($line);
+
+    my $text
+      = "$entry->{no} $entry->{email} $entry->{sub} $entry->{comment} $entry->{url}";
+    my $found;
     foreach my $word (@words) {
       $word = quotemeta $word;
-      if ("$nam $eml $sub $comment $url" =~ /$word/i) {
-        $flg++;
+      if ($text =~ /$word/i) {
+        $found++;
         if ($cond == 0) { last; }
-      } else {
-        if ($cond == 1) { $flg = 0; last; }
+      }
+      else {
+        if ($cond == 1) {
+          $found = 0;
+          last;
+        }
       }
     }
-    next if (!$flg);
+    next if (!$found);
 
     push(@lines, $line);
   }
-  close($data_fh);
 
   # 検索結果
   return @lines;

@@ -1,7 +1,7 @@
 <%
   # ワード検索
-  my $cond = param('cond');
-  my $word = param('word');
+  my $cond = param('cond') // 1;
+  my $word = param('word') // '';
   
   # 検索実行
   my @lines;
