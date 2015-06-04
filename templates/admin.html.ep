@@ -24,8 +24,13 @@
   my $pass = $in->{pass};
   my $pager;
   
+  
+  # 入室画面
+  if ($pass eq '') {
+    $title = '入室画面';
+  }
   # パスワード認証失敗
-  if ($pass && $pass ne $config->{password}) {
+  elsif ($pass && $pass ne $config->{password}) {
     $error = '認証できません';
   }
   # 管理モード
@@ -167,8 +172,6 @@
     }
   };
 
-  $title ||= '入室画面';
-
   layout 'common', title => $title;
 %>
 
@@ -187,7 +190,7 @@
   div.comment { margin-left:2em; color:#804000; font-size:90%; }
 % end
 
-% if ($in->{pass} eq '') {
+% if ($pass eq '') {
   <div align="center">
     <form action="<%= url_for %>" method="post">
       <table width="410" style="margin-top:50px">
