@@ -248,8 +248,14 @@
       }
     }
   }
+  #  記事表示
   else {
-    #  記事表示
+    # ページ番号
+    my $page = param('page');
+    $page = 1 if $page < 1;
+    $page = int $page;
+    
+    # レスポンス番号
     my $res_no = param('res');
     
     # レスポンスの場合
@@ -287,28 +293,28 @@
       }
     }
 
-    # ページ数定義
-    my $page = $in->{page} || 1;
-
     # データオープン
-    my $entry_num = 0;
+    my $line_num = 0;
     my @lines;
+
     open(my $data_fh, '<', $data_file)
       or Carp::croak("open error: $data_file");
+    
+    my $pg_max = $config->{pg_max};
+    my $offset = ($page - 1) * $pg_max;
+    
     while (my $line = <$data_fh>) {
-      $line = Encode::decode('UTF-8', $line);
-      $entry_num++;
-      next if ($entry_num < $page);
-      next if ($entry_num > $page + $config->{pg_max} - 1);
-      
-      push(@lines, $line);
+      if ($line_num >= $offset && $line_num < $offset + $pg_max) {
+        $line = Encode::decode('UTF-8', $line);
+        push(@lines, $line);
+      }
+      $line_num++;
     }
-    close($data_fh);
     
     # ページャー
     $pager = Data::Page->new;
-    $pager->total_entries($entry_num);
-    $pager->entries_per_page(config->{pg_max});
+    $pager->total_entries($line_num);
+    $pager->entries_per_page($pg_max);
     $pager->current_page($page);
     
     # ループ部
