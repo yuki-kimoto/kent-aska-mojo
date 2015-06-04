@@ -22,6 +22,7 @@
   my $next;
   my $no;
   my $pass = $in->{pass};
+  my $pager;
   
   # パスワード認証失敗
   if ($pass && $pass ne $config->{password}) {
@@ -129,40 +130,41 @@
       # 完了メッセージ
       $message = "記事を修正しました";
     }
-
-    # ページ数
-    my $page = 0;
-    foreach ( keys $in ) {
-      if (/^page:(\d+)/) {
-        $page = $1;
-        last;
+    else {
+      # ページ数
+      my $page = 0;
+      foreach ( keys $in ) {
+        if (/^page:(\d+)/) {
+          $page = $1;
+          last;
+        }
       }
-    }
 
-    # 最大表示件数
-    my $logs = 30;
-    
-    $title = '管理モード';
-
-    # 記事を展開
-    my $i = 0;
-    open(my $data_fh, '<',  $data_file)
-      or Carp::croak("open error: $data_file");
-    while (my $line = <$data_fh>) {
-      $line = Encode::decode('UTF-8', $line);
-      $i++;
-      next if ($i < $page + 1);
-      last if ($i > $page + $logs);
+      # 最大表示件数
+      my $logs = 30;
       
-      my $entry = $self->aska->parse_data_line($line);
-      
-      push @$entries, $entry;
-    }
-    close($data_fh);
+      $title = '管理モード';
 
-    # ページ繰越定義
-    $next = $page + $logs;
-    $back = $page - $logs;
+      # 記事を展開
+      my $i = 0;
+      open(my $data_fh, '<',  $data_file)
+        or Carp::croak("open error: $data_file");
+      while (my $line = <$data_fh>) {
+        $line = Encode::decode('UTF-8', $line);
+        $i++;
+        next if ($i < $page + 1);
+        last if ($i > $page + $logs);
+        
+        my $entry = $self->aska->parse_data_line($line);
+        
+        push @$entries, $entry;
+      }
+      close($data_fh);
+
+      # ページ繰越定義
+      $next = $page + $logs;
+      $back = $page - $logs;
+    }
   };
 
   $title ||= '入室画面';
@@ -212,7 +214,6 @@
 % } elsif ($in->{job_edit}) {
   <div align="right">
     <form action="<%= url_for %>" method="post">
-      <%= hidden_field mode => 'admin' %>
       <%= hidden_field pass => $in->{pass} %>
       <%= submit_button '&lt; 前画面' %>
     </form>
@@ -222,7 +223,6 @@
     <li>変更する部分のみ修正して送信ボタンを押してください。
   </ul>
   <form action="<%= url_for %>" method="post">
-    <%= hidden_field mode => 'admin' %>
     <%= hidden_field job => 'edit' %>
     <%= hidden_field no => $entry->{no} %>
     <%= hidden_field pass => $in->{pass} %>
@@ -264,7 +264,6 @@
   </div>
   <div class="ttl">■ 管理モード</div>
   <form action="<%= url_for %>" method="post">
-    <%= hidden_field mode => 'admin' %>
     <%= hidden_field 'pass' => $pass %>
     <div class="btn">
       <%= submit_button '修正', name => 'job_edit' %>
