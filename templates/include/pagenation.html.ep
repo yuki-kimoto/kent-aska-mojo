@@ -8,18 +8,20 @@
   my @pages = $pager->pages_in_navigation;
 %>
 
-<ul class="pager">
-  % if ($current_page != $pager->first_page) {
-    <li><a href="<%= url_with->query([page => $pager->first_page]) %>">&laquo;</a></li>
-  % }
-  % for my $page (@pages) {
-    % if ($page == $current_page) {
-      <li><%= $page %></li>
-    % } else {
-      <li><a href="<%= url_with->query([page => $page]) %>"><%= $page %></a></li>
+% if (@pages > 1) {
+  <ul class="pager">
+    % if ($current_page != $pager->first_page) {
+      <li><a href="<%= url_with->query([page => $pager->first_page]) %>">&laquo;</a></li>
     % }
-  % }
-  % if ($current_page != $pager->last_page) {
-    <li><a href="<%= url_with->query([page => $pager->last_page]) %>">&raquo;</a></li>
-  % }
-</ul>
+    % for my $page (@pages) {
+      % if ($page == $current_page) {
+        <li><%= $page %></li>
+      % } else {
+        <li><a href="<%= url_with->query([page => $page]) %>"><%= $page %></a></li>
+      % }
+    % }
+    % if ($current_page != $pager->last_page) {
+      <li><a href="<%= url_with->query([page => $pager->last_page]) %>">&raquo;</a></li>
+    % }
+  </ul>
+% }
