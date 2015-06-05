@@ -136,39 +136,17 @@
       $message = "記事を修正しました";
     }
     else {
-      # ページ数
-      my $page = 0;
-      foreach ( keys $in ) {
-        if (/^page:(\d+)/) {
-          $page = $1;
-          last;
-        }
-      }
-
-      # 最大表示件数
-      my $logs = 30;
+      # ページ番号
+      my $page = param('page') || 1;
+      $page = 1 if $page < 1;
+      $page = int $page;
+      
+      # エントリー取得
+      my $result = $self->aska->get_entries($page);
+      $entries = $result->{entries};
+      $pager = $result->{pager};
       
       $title = '管理モード';
-
-      # 記事を展開
-      my $i = 0;
-      open(my $data_fh, '<',  $data_file)
-        or Carp::croak("open error: $data_file");
-      while (my $line = <$data_fh>) {
-        $line = Encode::decode('UTF-8', $line);
-        $i++;
-        next if ($i < $page + 1);
-        last if ($i > $page + $logs);
-        
-        my $entry = $self->aska->parse_data_line($line);
-        
-        push @$entries, $entry;
-      }
-      close($data_fh);
-
-      # ページ繰越定義
-      $next = $page + $logs;
-      $back = $page - $logs;
     }
   };
 
@@ -284,11 +262,6 @@
       </div>
       <div class="comment"><%= $self->aska->parse_comment($entry->{comment}) %></div>
     % }
-    % if ($back >= 0) {
-      <%= submit_button '前ページ', name => "page:$back" %>
-    % }
-    % if ($next < @$entries) {
-      <%= submit_button '次ページ', name => "page:$next" %>
-    % }
+    <%= include '/include/pagenation_post', pager => $pager %>
   </form>
 % }

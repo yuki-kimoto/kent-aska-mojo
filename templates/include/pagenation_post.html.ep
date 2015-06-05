@@ -1,0 +1,41 @@
+<%
+  my $config = $self->app->config;
+  
+  my $total_entires = $pager->total_entries;
+  my $current_page = $pager->current_page;
+  $pager->pages_per_navigation(10);
+  
+  my @pages = $pager->pages_in_navigation;
+%>
+
+<ul class="pager">
+  <%= hidden_field 'page' => '', id => 'page' %>
+  % if ($current_page != $pager->first_page) {
+    <li>
+      <a href="javascript:void(0)"
+        onclick="document.getElementById('page').value = <%= $pager->first_page %>;document.forms[0].submit()">
+        &laquo;
+      </a>
+    </li>
+  % }
+  % for my $page (@pages) {
+    % if ($page == $current_page) {
+      <li><%= $page %></li>
+    % } else {
+      <li>
+        <a href="javascript:void(0)"
+          onclick="document.getElementById('page').value = <%= $page %>;document.forms[0].submit()">
+          <%= $page %>
+        </a>
+      </li>
+    % }
+  % }
+  % if ($current_page != $pager->last_page) {
+    <li>
+      <a href="javascript:void(0)"
+        onclick="document.getElementById('page').value = <%= $pager->last_page %>;document.forms[0].submit()">
+        &raquo;
+      </a>
+    </li>
+  % }
+</ul>
