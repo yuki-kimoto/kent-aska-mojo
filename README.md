@@ -56,11 +56,11 @@ CGIを設置するディレクトリに移動してください。
 
 ダウンロードします。
 
-    curl -kL https://github.com/yuki-kimoto/kent-aska-mojo/archive/devel.tar.gz > aska-devel.tar.gz
+    curl -kL https://github.com/yuki-kimoto/kent-aska-mojo/archive/latest.tar.gz > aska-latest.tar.gz
 
 展開します。
 
-    tar xf aska-devel.tar.gz
+    tar xf aska-latest.tar.gz
 
 名前を変更します。
 
