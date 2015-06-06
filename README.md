@@ -64,7 +64,7 @@ CGIを設置するディレクトリに移動してください。
 
 名前を変更します。
 
-    mv kent-aska-mojo-devel aska
+    mv kent-aska-mojo-latest aska
 
 ## セットアップ
 
