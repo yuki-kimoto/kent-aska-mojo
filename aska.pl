@@ -12,6 +12,8 @@ use Mojo::Util 'xml_escape';
 use Data::Page;
 use Data::Page::Navigation;
 
+our $VERSION = '1.01';
+
 # コンフィグの読み込み
 my $my_config_file = app->home->rel_file('aska.my.conf');
 

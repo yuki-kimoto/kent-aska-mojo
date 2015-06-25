@@ -1,3 +1,5 @@
-<Files aska.cgi >
+deny from all
+
+<Files ~ "aska\.cgi">
 allow from all
 </Files>
